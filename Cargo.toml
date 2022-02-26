@@ -1,0 +1,18 @@
+[package]
+name = "houdini"
+version = "0.1.0"
+edition = "2021"
+authors = ["William Findlay <william@williamfindlay.com>"]
+description = """A container escape artist"""
+
+[[bin]]
+name = "houdini"
+path = "bin/houdini.rs"
+
+[lib]
+name = "houdini"
+path = "src/lib.rs"
+
+[dependencies]
+clap = "3.1.2"
+clap_derive = "3.1.2"
