@@ -29,6 +29,8 @@ impl Display for LoggingFormat {
     }
 }
 
+// It is necessary to split up the builder like this because mutating the formatter
+// changes its type. See the beginning of init() for details.
 fn builder(args: &cli::Cli) -> SubscriberBuilder {
     let builder = FmtSubscriber::builder();
 
@@ -50,15 +52,25 @@ fn builder(args: &cli::Cli) -> SubscriberBuilder {
     builder
 }
 
+/// Initialize the logger by setting the right subscriber.
 pub fn init(args: &cli::Cli) {
-    let human_subscriber = builder(args).finish();
-    let json_subscriber = builder(args).json().finish();
-    let pretty_subscriber = builder(args).pretty().with_thread_ids(true).finish();
-    let compact_subscriber = builder(args).compact().finish();
+    // Setting the formatter mutates the builder's type, so construct a unique subscriber
+    // for each possible formatter type and set the correct susbcriber below.
+    let human_subscriber = builder(args).with_writer(std::io::stderr).finish();
+    let json_subscriber = builder(args).with_writer(std::io::stderr).json().finish();
+    let pretty_subscriber = builder(args)
+        .with_writer(std::io::stderr)
+        .pretty()
+        .with_thread_ids(true)
+        .finish();
+    let compact_subscriber = builder(args)
+        .with_writer(std::io::stderr)
+        .compact()
+        .finish();
 
     let tracing_format = match args.format.clone() {
         LoggingFormat::Auto => {
-            if atty::is(atty::Stream::Stdout) {
+            if atty::is(atty::Stream::Stderr) {
                 LoggingFormat::Pretty
             } else {
                 LoggingFormat::Json
