@@ -6,6 +6,8 @@
 // February 25, 2022  William Findlay  Created this.
 //
 
+//! This module contains helper functions to set up logging for Houdini.
+
 use crate::cli;
 use clap_derive::ArgEnum;
 use std::fmt::Display;
@@ -16,10 +18,15 @@ use tracing_subscriber::{fmt::SubscriberBuilder, FmtSubscriber};
 /// [`Auto`] implies pretty if the target is a TTY, JSON otherwise.
 #[derive(Debug, ArgEnum, Clone)]
 pub enum LoggingFormat {
+    /// Implies Pretty if stderr is a TTY, otherwise Json
     Auto,
+    /// Pretty logs log messages on multiple lines
     Pretty,
+    /// Human logs in a human-readable format
     Human,
+    /// Compact is a more compact version of Human
     Compact,
+    /// Json logs in a machine-readable JSON format
     Json,
 }
 
@@ -47,6 +54,7 @@ fn builder(args: &cli::Cli) -> SubscriberBuilder {
     let builder = builder
         .with_level(true)
         .with_thread_ids(false)
+        .with_line_number(true)
         .with_thread_names(true);
 
     builder
@@ -58,11 +66,7 @@ pub fn init(args: &cli::Cli) {
     // for each possible formatter type and set the correct susbcriber below.
     let human_subscriber = builder(args).with_writer(std::io::stderr).finish();
     let json_subscriber = builder(args).with_writer(std::io::stderr).json().finish();
-    let pretty_subscriber = builder(args)
-        .with_writer(std::io::stderr)
-        .pretty()
-        .with_thread_ids(true)
-        .finish();
+    let pretty_subscriber = builder(args).with_writer(std::io::stderr).pretty().finish();
     let compact_subscriber = builder(args)
         .with_writer(std::io::stderr)
         .compact()
@@ -90,4 +94,6 @@ pub fn init(args: &cli::Cli) {
         LoggingFormat::Compact => tracing::subscriber::set_global_default(compact_subscriber)
             .expect("setting tracing default has failed"),
     }
+
+    tracing_log::LogTracer::init().expect("failed to initialize tracing compatibility layer");
 }

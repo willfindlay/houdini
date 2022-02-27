@@ -10,9 +10,14 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
+use anyhow::Result;
 use clap_derive::Parser;
+use tracing::instrument;
 
-use crate::logging::LoggingFormat;
+use crate::{
+    exploits::container::{self, Exploit},
+    logging::LoggingFormat,
+};
 
 /// Describes Houdini's command line interface.
 #[derive(Parser, Debug)]
@@ -22,11 +27,11 @@ pub struct Cli {
     #[clap(subcommand)]
     subcmd: Cmd,
     /// Verbosity level (-1 or lower is silent, 0 is quiet, 1 is info, 2 is debug, 3 is trace).
-    #[clap(long, short, default_value = "1")]
+    #[clap(global = true, long, short, default_value = "1")]
     pub verbose: i8,
     /// Format to use for logging. Auto implies pretty if stdout is a TTY and JSON
     /// otherwise.
-    #[clap(arg_enum, long, short, default_value = "auto")]
+    #[clap(global = true, arg_enum, long, short, default_value = "auto")]
     pub format: LoggingFormat,
 }
 
@@ -35,12 +40,31 @@ pub struct Cli {
 enum Cmd {
     /// Run through the container-level test suite. Should be called from within
     /// a container.
-    Container,
+    Container {
+        /// The exploit to run.
+        #[clap(arg_enum, min_values = 1, required = true)]
+        exploits: Vec<Exploit>,
+    },
 }
 
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
-    pub fn run(self) -> () {
-        // TODO
+    #[instrument(level = "trace")]
+    pub fn run(self) -> Result<()> {
+        match self.subcmd {
+            Cmd::Container { exploits } => {
+                for exploit in exploits {
+                    if let Err(e) = container::run_exploit(exploit.clone()) {
+                        tracing::error!(
+                            error = &*e.to_string(),
+                            exploit = tracing::field::debug(exploit),
+                            "error running exploit"
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

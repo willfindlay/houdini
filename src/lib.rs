@@ -10,6 +10,8 @@
 //! other projects. (Although you should feel free to ignore this notice and use it
 //! anyway---just be warned that many aspects of this library are specific to Houdini.)
 
+#![deny(missing_docs)]
+
 mod cli;
 mod exploits;
 pub mod logging;

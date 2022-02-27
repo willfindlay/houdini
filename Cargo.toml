@@ -22,8 +22,14 @@ name = "houdini"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow = "1.0.55"
 atty = "0.2.14"
 clap = "3.1.2"
 clap_derive = "3.1.2"
+human-panic = "1.0.3"
+log-panics = { version = "2.0.0", features = ["with-backtrace"] }
 tracing = "0.1.31"
+tracing-log = "0.1.2"
 tracing-subscriber = { version = "0.3.9", features = ["fmt", "std", "json"] }
+
+[features]
