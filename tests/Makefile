@@ -7,20 +7,13 @@
 #
 
 CONTAINER_ENGINE = docker
-IMAGE = houdini
+IMAGE = houdini-victim
 TAG   = latest
 
 QUIET = @
 
-.PHONY: all
-all: | image victim-image
-
 .PHONY: image
 image:
-	$(CONTAINER_ENGINE) build -t $(IMAGE):$(TAG) .
+	$(CONTAINER_ENGINE) build -f Dockerfile.victim -t $(IMAGE):$(TAG) .
 	$(QUIET)echo "Push like this when ready:"
 	$(QUIET)echo "    $(CONTAINER_ENGINE) push $(IMAGE):$(TAG)"
-
-.PHONY: victim-image
-victim-image:
-	$(MAKE) -C tests image

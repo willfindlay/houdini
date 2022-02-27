@@ -5,12 +5,3 @@
 //
 // February 25, 2022  William Findlay  Created this.
 //
-
-use clap::StructOpt;
-use houdini::*;
-
-fn main() {
-    let args = Cli::parse();
-    houdini::logging::init(&args);
-    args.run()
-}
