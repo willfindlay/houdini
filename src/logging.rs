@@ -16,15 +16,15 @@ use tracing_subscriber::{fmt::SubscriberBuilder, FmtSubscriber};
 
 /// Formatter to use in the logging subscriber.
 /// [`Auto`] implies pretty if the target is a TTY, JSON otherwise.
-#[derive(Debug, ArgEnum, Clone)]
+#[derive(Debug, ArgEnum, Clone, Copy)]
 pub enum LoggingFormat {
-    /// Implies Pretty if stderr is a TTY, otherwise Json
+    /// Implies Json if stderr is a file, else Full
     Auto,
     /// Pretty logs log messages on multiple lines
     Pretty,
     /// Human logs in a human-readable format
-    Human,
-    /// Compact is a more compact version of Human
+    Full,
+    /// Compact is a more compact version of Full
     Compact,
     /// Json logs in a machine-readable JSON format
     Json,
@@ -89,7 +89,7 @@ pub fn init(args: &cli::Cli) {
             .expect("setting tracing default has failed"),
         LoggingFormat::Pretty => tracing::subscriber::set_global_default(pretty_subscriber)
             .expect("setting tracing default has failed"),
-        LoggingFormat::Human => tracing::subscriber::set_global_default(human_subscriber)
+        LoggingFormat::Full => tracing::subscriber::set_global_default(human_subscriber)
             .expect("setting tracing default has failed"),
         LoggingFormat::Compact => tracing::subscriber::set_global_default(compact_subscriber)
             .expect("setting tracing default has failed"),

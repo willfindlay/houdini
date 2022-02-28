@@ -15,7 +15,7 @@ use clap_derive::Parser;
 use tracing::instrument;
 
 use crate::{
-    exploits::container::{self, Exploit},
+    exploits::container::{self, ExploitKind},
     logging::LoggingFormat,
 };
 
@@ -43,7 +43,7 @@ enum Cmd {
     Container {
         /// The exploit to run.
         #[clap(arg_enum, min_values = 1, required = true)]
-        exploits: Vec<Exploit>,
+        exploits: Vec<ExploitKind>,
     },
 }
 

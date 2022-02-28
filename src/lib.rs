@@ -11,6 +11,7 @@
 //! anyway---just be warned that many aspects of this library are specific to Houdini.)
 
 #![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
 
 mod cli;
 mod exploits;
