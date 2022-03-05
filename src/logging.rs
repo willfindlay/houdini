@@ -51,13 +51,11 @@ fn builder(args: &cli::Cli) -> SubscriberBuilder {
     };
 
     // Set remaining options
-    let builder = builder
+    builder
         .with_level(true)
         .with_thread_ids(false)
         .with_line_number(true)
-        .with_thread_names(true);
-
-    builder
+        .with_thread_names(true)
 }
 
 /// Initialize the logger by setting the right subscriber.
@@ -72,7 +70,7 @@ pub fn init(args: &cli::Cli) {
         .compact()
         .finish();
 
-    let tracing_format = match args.format.clone() {
+    let tracing_format = match args.format {
         LoggingFormat::Auto => {
             if atty::is(atty::Stream::Stderr) {
                 LoggingFormat::Pretty

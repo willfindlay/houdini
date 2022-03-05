@@ -11,9 +11,12 @@
 //! anyway---just be warned that many aspects of this library are specific to Houdini.)
 
 #![deny(missing_docs)]
-#![deny(clippy::missing_docs_in_private_items)]
+
+#[macro_use]
+extern crate async_trait;
 
 mod cli;
+pub mod config;
 mod exploits;
 pub mod logging;
 mod report;

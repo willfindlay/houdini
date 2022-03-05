@@ -1,0 +1,8 @@
+[log]
+file = "/var/run/houdini.log.gz"
+
+[docker]
+client = "docker"
+daemon = "dockerd"
+runtime = "containerd"
+socket = "/var/run/docker.sock"

@@ -12,7 +12,6 @@
 
 use anyhow::Result;
 use clap_derive::Parser;
-use tracing::instrument;
 
 use crate::{
     exploits::container::{self, ExploitKind},
@@ -41,6 +40,18 @@ enum Cmd {
     /// Run through the container-level test suite. Should be called from within
     /// a container.
     Container {
+        /// Name or ID of a docker container image
+        #[clap(
+            long,
+            short,
+            required = true,
+            conflicts_with = "container",
+            alias = "img"
+        )]
+        image: Option<String>,
+        /// Name or container ID of a running container
+        #[clap(long, short, required = true, conflicts_with = "image")]
+        container: Option<String>,
         /// The exploit to run.
         #[clap(arg_enum, min_values = 1, required = true)]
         exploits: Vec<ExploitKind>,
@@ -49,12 +60,15 @@ enum Cmd {
 
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
-    #[instrument(level = "trace")]
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self.subcmd {
-            Cmd::Container { exploits } => {
+            Cmd::Container {
+                image,
+                container,
+                exploits,
+            } => {
                 for exploit in exploits {
-                    if let Err(e) = container::run_exploit(exploit.clone()) {
+                    if let Err(e) = container::run_exploit(exploit.clone()).await {
                         tracing::error!(
                             error = &*e.to_string(),
                             exploit = tracing::field::debug(exploit),
