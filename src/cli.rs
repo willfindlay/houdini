@@ -40,18 +40,18 @@ enum Cmd {
     /// Run through the container-level test suite. Should be called from within
     /// a container.
     Container {
-        /// Name or ID of a docker container image
-        #[clap(
-            long,
-            short,
-            required = true,
-            conflicts_with = "container",
-            alias = "img"
-        )]
-        image: Option<String>,
-        /// Name or container ID of a running container
-        #[clap(long, short, required = true, conflicts_with = "image")]
-        container: Option<String>,
+        // /// Name or ID of a docker container image
+        // #[clap(
+        //     long,
+        //     short,
+        //     required = true,
+        //     conflicts_with = "container",
+        //     alias = "img"
+        // )]
+        // image: Option<String>,
+        // /// Name or container ID of a running container
+        // #[clap(long, short, required = true, conflicts_with = "image")]
+        // container: Option<String>,
         /// The exploit to run.
         #[clap(arg_enum, min_values = 1, required = true)]
         exploits: Vec<ExploitKind>,
@@ -63,8 +63,8 @@ impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.subcmd {
             Cmd::Container {
-                image,
-                container,
+                // image,
+                // container,
                 exploits,
             } => {
                 for exploit in exploits {

@@ -24,8 +24,6 @@ COPY src ./src
 COPY bin ./bin
 RUN cargo install --target x86_64-unknown-linux-musl --path .
 
-FROM scratch
+FROM ubuntu:latest
 COPY --from=builder /usr/local/cargo/bin/houdini .
-ENV PATH .
-USER 9999
-CMD ["./houdini"]
+CMD ["/houdini"]
