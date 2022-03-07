@@ -9,7 +9,7 @@
 use std::process::exit;
 
 use clap::StructOpt;
-use houdini::{config::Config, Cli};
+use houdini::{Cli, CONFIG};
 
 #[tokio::main]
 async fn main() {
@@ -24,9 +24,8 @@ async fn main() {
     human_panic::setup_panic!();
 
     // Initialize config file
-    let config = Config::new(&args).expect("Failed to initialize config");
     let _span =
-        tracing::trace_span!("main", args = debug(&args), config = debug(&config)).entered();
+        tracing::trace_span!("main", args = debug(&args), config = debug(&*CONFIG)).entered();
 
     // After parsing arguments, we can consume them and run the corresponding subcommand.
     match args.run().await {

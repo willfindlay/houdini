@@ -10,10 +10,14 @@
 
 use anyhow::Result;
 use directories::ProjectDirs;
+use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::path::PathBuf;
 
-use crate::Cli;
+lazy_static! {
+    /// The shared configuration object for Houdini.
+    pub static ref CONFIG: Config = Config::new().expect("Failed to initialize config");
+}
 
 /// The base level config for Houdini.
 #[derive(Deserialize, Debug)]
@@ -46,7 +50,7 @@ pub struct Log {
 
 impl Config {
     /// Construct a new Config.
-    pub fn new(_cli: &Cli) -> Result<Self> {
+    fn new() -> Result<Self> {
         let builder = config::Config::builder();
 
         // Add defaults

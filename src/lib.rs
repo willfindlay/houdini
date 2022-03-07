@@ -21,4 +21,5 @@ mod exploits;
 pub mod logging;
 mod report;
 
+pub use crate::config::CONFIG;
 pub use cli::Cli;

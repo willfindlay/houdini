@@ -14,7 +14,7 @@ use anyhow::Result;
 use clap_derive::Parser;
 
 use crate::{
-    exploits::container::{self, ExploitKind},
+    exploits::container::{self, ExploitStrategy},
     logging::LoggingFormat,
 };
 
@@ -54,7 +54,7 @@ enum Cmd {
         // container: Option<String>,
         /// The exploit to run.
         #[clap(arg_enum, min_values = 1, required = true)]
-        exploits: Vec<ExploitKind>,
+        exploits: Vec<ExploitStrategy>,
     },
 }
 
@@ -68,12 +68,21 @@ impl Cli {
                 exploits,
             } => {
                 for exploit in exploits {
-                    if let Err(e) = container::run_exploit(exploit.clone()).await {
-                        tracing::error!(
-                            error = &*e.to_string(),
-                            exploit = tracing::field::debug(exploit),
-                            "error running exploit"
-                        );
+                    match container::run_exploit(exploit.clone()).await {
+                        container::ExploitStatus::Failure { reason } => {
+                            tracing::warn!(
+                                exploit = debug(&exploit),
+                                reason = reason.as_str(),
+                                "Exploit failed"
+                            )
+                        }
+                        status => {
+                            tracing::info!(
+                                exploit = debug(&exploit),
+                                status = debug(&status),
+                                "Exploit succeeded"
+                            )
+                        }
                     }
                 }
             }
