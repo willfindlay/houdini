@@ -16,9 +16,11 @@ use futures::StreamExt;
 
 use crate::CONFIG;
 
+/// Wraps an exit code for a container exec.
 pub struct ExitCode(pub u64);
 
 impl ExitCode {
+    /// Was the command successful?
     pub fn success(&self) -> bool {
         self.0 == 0
     }
@@ -33,18 +35,18 @@ impl Deref for ExitCode {
 }
 
 /// Command is a builder for running commands in a Docker container.
-pub struct Command {
+pub struct Command<'write> {
     id: ContainerId,
     command: String,
     args: Vec<String>,
     tty: bool,
     privileged: bool,
     // stdin: Option<Stdio>,
-    stdout: Option<Box<dyn std::io::Write>>,
-    stderr: Option<Box<dyn std::io::Write>>,
+    stdout: Option<&'write mut dyn std::io::Write>,
+    stderr: Option<&'write mut dyn std::io::Write>,
 }
 
-impl Command {
+impl<'write> Command<'write> {
     /// Construct a new command that runs `program` inside of `container` where `container`
     /// is a container name or container id.
     pub fn new<S: AsRef<str>, ID: Into<ContainerId>>(container: ID, program: S) -> Self {
@@ -85,20 +87,14 @@ impl Command {
         self
     }
 
-    // /// Sets program stdin to `stdin`.
-    // pub fn stdin(&mut self, stdin: Box<dyn std::io::Read>) -> &mut Self {
-    //     self.stdin = Some(stdin);
-    //     self
-    // }
-
     /// Sets program stdout to `stdout`.
-    pub fn stdout(&mut self, stdout: Box<dyn std::io::Write>) -> &mut Self {
+    pub fn stdout(&mut self, stdout: &'write mut dyn std::io::Write) -> &mut Self {
         self.stdout = Some(stdout);
         self
     }
 
     /// Sets program stderr to `stderr`.
-    pub fn stderr(&mut self, stderr: Box<dyn std::io::Write>) -> &mut Self {
+    pub fn stderr(&mut self, stderr: &'write mut dyn std::io::Write) -> &mut Self {
         self.stderr = Some(stderr);
         self
     }
@@ -121,7 +117,7 @@ impl Command {
         while let Some(res) = stream.next().await {
             if let Ok(tty) = res {
                 match tty {
-                    docker_api::conn::TtyChunk::StdIn(buf) => {
+                    docker_api::conn::TtyChunk::StdIn(_) => {
                         // docker_api doesn't seem to support this from exec endpoint atm
                         // TODO maybe switch to bollard which does support this
                         unreachable!()

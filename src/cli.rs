@@ -10,7 +10,7 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap_derive::Parser;
@@ -61,10 +61,10 @@ impl Cli {
     }
 }
 
-fn path_validator(path: &str) -> Result<PathBuf, std::io::Error> {
-    let path = PathBuf::from(path);
-    if !path.exists() {
-        return Err();
-    }
-    Ok(path)
-}
+// fn path_validator(path: &str) -> Result<PathBuf, std::io::Error> {
+//     let path = PathBuf::from(path);
+//     if !path.exists() {
+//         return Err();
+//     }
+//     Ok(path)
+// }
