@@ -10,12 +10,12 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use std::path::PathBuf;
+use std::{fs::File, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap_derive::Parser;
 
-use crate::logging::LoggingFormat;
+use crate::{exploits::Plan, logging::LoggingFormat};
 
 /// Describes Houdini's command line interface.
 #[derive(Parser, Debug)]
@@ -47,13 +47,30 @@ enum Cmd {
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
     pub async fn run(self) -> Result<()> {
+        use crate::exploits::ExploitStatus;
         match self.subcmd {
-            Cmd::Run {
-                // image,
-                // container,
-                exploits,
-            } => {
-                // TODO: run the exploits
+            Cmd::Run { exploits } => {
+                for exploit in exploits {
+                    let f = File::open(&exploit).context(format!(
+                        "could not open exploit file {}",
+                        &exploit.display()
+                    ))?;
+                    let plan: Plan = serde_yaml::from_reader(f).context(format!(
+                        "failed to parse exploit file {}",
+                        &exploit.display()
+                    ))?;
+                    let status = plan.run().await;
+                    match status {
+                        ExploitStatus::Undecided
+                        | ExploitStatus::SetupFailure
+                        | ExploitStatus::ExploitFailure => {
+                            tracing::info!(status = ?status, "plan execution FAILED");
+                        }
+                        ExploitStatus::ExploitSuccess => {
+                            tracing::info!(status = ?status, "plan execution SUCCEEDED");
+                        }
+                    }
+                }
             }
         }
 

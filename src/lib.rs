@@ -12,9 +12,6 @@
 
 #![deny(missing_docs)]
 
-#[macro_use]
-extern crate async_trait;
-
 mod cli;
 mod exploits;
 mod report;
