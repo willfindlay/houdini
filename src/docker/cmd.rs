@@ -8,16 +8,38 @@
 
 //! An interface for running commands in a Docker container.
 
-use std::{io::Write, ops::Deref};
+use std::ops::Deref;
 
-use anyhow::{bail, Result};
-use docker_api::{api::ContainerId, Docker, Exec, ExecContainerOpts};
+use anyhow::Result;
+use bollard::{
+    exec::{CreateExecOptions, StartExecOptions},
+    Docker, API_DEFAULT_VERSION,
+};
+// use docker_api::{api::ContainerId, Docker, Exec, ExecContainerOpts};
 use futures::StreamExt;
 
 use crate::CONFIG;
 
+/// Determines what the Command does with stdio from the container exec.
+pub enum Stdio {
+    /// Ignore stdio
+    Null,
+    /// Use caller's stdio
+    Inherit,
+    /// Write stdio to vec
+    Piped,
+}
+
+/// Wraps the exit code and stdio of the container exec.
+#[derive(Default)]
+pub struct Output {
+    pub code: Option<ExitCode>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
 /// Wraps an exit code for a container exec.
-pub struct ExitCode(pub u64);
+pub struct ExitCode(pub i64);
 
 impl ExitCode {
     /// Was the command successful?
@@ -27,7 +49,7 @@ impl ExitCode {
 }
 
 impl Deref for ExitCode {
-    type Target = u64;
+    type Target = i64;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -35,23 +57,23 @@ impl Deref for ExitCode {
 }
 
 /// Command is a builder for running commands in a Docker container.
-pub struct Command<'write> {
-    id: ContainerId,
+pub struct Command {
+    id: String,
     command: String,
     args: Vec<String>,
     tty: bool,
     privileged: bool,
     // stdin: Option<Stdio>,
-    stdout: Option<&'write mut dyn std::io::Write>,
-    stderr: Option<&'write mut dyn std::io::Write>,
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
 }
 
-impl<'write> Command<'write> {
+impl Command {
     /// Construct a new command that runs `program` inside of `container` where `container`
     /// is a container name or container id.
-    pub fn new<S: AsRef<str>, ID: Into<ContainerId>>(container: ID, program: S) -> Self {
+    pub fn new<S: AsRef<str>>(container: String, program: S) -> Self {
         return Self {
-            id: container.into(),
+            id: container,
             command: program.as_ref().to_owned(),
             args: Default::default(),
             tty: false,
@@ -88,59 +110,136 @@ impl<'write> Command<'write> {
     }
 
     /// Sets program stdout to `stdout`.
-    pub fn stdout(&mut self, stdout: &'write mut dyn std::io::Write) -> &mut Self {
+    pub fn stdout(&mut self, stdout: Stdio) -> &mut Self {
         self.stdout = Some(stdout);
         self
     }
 
     /// Sets program stderr to `stderr`.
-    pub fn stderr(&mut self, stderr: &'write mut dyn std::io::Write) -> &mut Self {
+    pub fn stderr(&mut self, stderr: Stdio) -> &mut Self {
         self.stderr = Some(stderr);
         self
     }
 
-    /// Run the program in the docker container and return its status.
-    ///
-    /// TODO: Have this return a Status object instead
-    pub async fn status(&mut self) -> Result<ExitCode> {
-        let client = Docker::unix(&CONFIG.docker.socket);
-        let cmd = std::iter::once(&self.command).chain(&self.args);
+    // async fn exec(&mut self) -> Result<Output> {
+    //     let client = Docker::unix(&CONFIG.docker.socket);
+    //     let cmd = std::iter::once(&self.command).chain(&self.args);
 
-        let builder = ExecContainerOpts::builder()
-            .cmd(cmd)
-            .tty(self.tty)
-            .privileged(self.privileged);
-        let opts = builder.build();
+    //     let builder = ExecContainerOpts::builder()
+    //         .cmd(cmd)
+    //         .tty(self.tty)
+    //         .privileged(self.privileged);
+    //     let opts = builder.build();
 
-        let exec = Exec::create(client, &self.id, &opts).await?;
-        let mut stream = exec.start();
-        while let Some(res) = stream.next().await {
-            if let Ok(tty) = res {
-                match tty {
-                    docker_api::conn::TtyChunk::StdIn(_) => {
-                        // docker_api doesn't seem to support this from exec endpoint atm
-                        // TODO maybe switch to bollard which does support this
-                        unreachable!()
-                    }
-                    docker_api::conn::TtyChunk::StdOut(buf) => {
-                        if let Some(writer) = self.stdout.as_mut() {
-                            writer.write_all(&buf)?;
-                        }
-                    }
-                    docker_api::conn::TtyChunk::StdErr(buf) => {
-                        if let Some(writer) = self.stderr.as_mut() {
-                            writer.write_all(&buf)?;
-                        }
+    //     let mut output = Output::default();
+
+    //     let exec = Exec::create(client, &self.id, &opts).await?;
+    //     let mut stream = exec.start();
+    //     while let Some(res) = stream.next().await {
+    //         if let Ok(tty) = res {
+    //             match tty {
+    //                 docker_api::conn::TtyChunk::StdIn(_) => {
+    //                     // docker_api doesn't seem to support this from exec endpoint atm
+    //                     // TODO maybe switch to bollard which does support this
+    //                     unreachable!()
+    //                 }
+    //                 docker_api::conn::TtyChunk::StdOut(mut buf) => match self.stdout {
+    //                     Some(Stdio::Piped) => {
+    //                         output.stdout.append(&mut buf);
+    //                     }
+    //                     Some(Stdio::Null) => {}
+    //                     Some(Stdio::Inherit) | None => {
+    //                         if let Err(e) = std::io::stdout().write_all(&mut buf) {
+    //                             tracing::error!(error = ?e, "failed to write container exec stdout");
+    //                         }
+    //                     }
+    //                 },
+    //                 docker_api::conn::TtyChunk::StdErr(mut buf) => match self.stderr {
+    //                     Some(Stdio::Piped) => {
+    //                         output.stderr.append(&mut buf);
+    //                     }
+    //                     Some(Stdio::Null) => {}
+    //                     Some(Stdio::Inherit) | None => {
+    //                         if let Err(e) = std::io::stderr().write_all(&mut buf) {
+    //                             tracing::error!(error = ?e, "failed to write container exec stderr");
+    //                         }
+    //                     }
+    //                 },
+    //             }
+    //         }
+    //     }
+
+    //     let info = exec.inspect().await?;
+    //     output.code = info.exit_code.map(ExitCode);
+    //     Ok(output)
+    // }
+
+    async fn exec(&mut self) -> Result<Output> {
+        let client = Docker::connect_with_unix(
+            CONFIG
+                .docker
+                .socket
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("bad docker socket path in config"))?,
+            60,
+            API_DEFAULT_VERSION,
+        )?;
+
+        let opts = CreateExecOptions {
+            attach_stdin: Some(false),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(self.tty),
+            cmd: Some(
+                std::iter::once(self.command.clone())
+                    .chain(self.args.iter().cloned())
+                    .collect(),
+            ),
+            privileged: Some(self.privileged),
+            ..Default::default()
+        };
+
+        let exec = client.create_exec(&self.id, opts).await?.id;
+
+        let opts = StartExecOptions {
+            detach: false,
+            ..Default::default()
+        };
+        let results = client.start_exec(&exec, Some(opts)).await?;
+
+        let mut cmd_out = Output::default();
+
+        match results {
+            bollard::exec::StartExecResults::Attached { mut output, .. } => {
+                while let Some(Ok(output)) = output.next().await {
+                    match output {
+                        bollard::container::LogOutput::StdErr { message } => cmd_out
+                            .stdout
+                            .append(&mut message.iter().cloned().collect()),
+                        bollard::container::LogOutput::StdOut { message } => cmd_out
+                            .stdout
+                            .append(&mut message.iter().cloned().collect()),
+                        _ => continue,
                     }
                 }
             }
+            bollard::exec::StartExecResults::Detached => unreachable!(),
         }
 
-        let info = exec.inspect().await?;
-        if let Some(code) = info.exit_code {
-            Ok(ExitCode(code))
-        } else {
-            bail!("command did not complete")
-        }
+        let inspect = client.inspect_exec(&exec).await?;
+        cmd_out.code = inspect.exit_code.map(ExitCode);
+
+        Ok(cmd_out)
+    }
+
+    /// Run the program in the docker container and return its output.
+    pub async fn output(&mut self) -> Result<Output> {
+        self.exec().await
+    }
+
+    /// Run the program in the docker container and return its status.
+    pub async fn status(&mut self) -> Result<Option<ExitCode>> {
+        let output = self.exec().await?;
+        Ok(output.code)
     }
 }

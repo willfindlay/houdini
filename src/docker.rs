@@ -9,4 +9,4 @@
 
 mod cmd;
 
-pub use cmd::{Command, ExitCode};
+pub use cmd::{Command, ExitCode, Stdio};
