@@ -41,6 +41,7 @@ log-panics = { version = "2.0.0", features = ["with-backtrace"] }
 procfs = "0.12.0"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_yaml = "0.8.24"
+serial_test = "0.8.0"
 tokio = { version = "1.17.0", features = ["full"] }
 tracing = "0.1.31"
 tracing-log = "0.1.2"
