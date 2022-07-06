@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     // Initialize the "tracing" logger.
-    houdini::logging::init(&args);
+    let _guard = houdini::logging::init(&args)?;
 
     // We want to log panics in debug mode, but produce a human panic message in release.
     log_panics::init();
