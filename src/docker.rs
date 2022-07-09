@@ -8,5 +8,7 @@
 //! Houdini's interaction with the Docker API.
 
 mod cmd;
+mod image;
 
 pub use cmd::{Command, ExitCode, Stdio};
+pub use image::ImagePullPolicy;
