@@ -1,5 +1,6 @@
 [log]
 file = "~/.houdini/houdini.log"
+level = "info"
 
 [docker]
 client = "docker"

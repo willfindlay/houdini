@@ -21,6 +21,7 @@ lazy_static! {
 
 /// The base level config for Houdini.
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     /// Configuration specific to Docker.
     pub docker: Docker,
@@ -30,6 +31,7 @@ pub struct Config {
 
 /// Configuration specific to Docker.
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Docker {
     /// Name of the Docker client binary.
     pub client: String,
@@ -43,9 +45,43 @@ pub struct Docker {
 
 /// Configuration specific to Houdini's logger.
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Log {
-    /// Name of the Docker client binary.
-    pub file: PathBuf,
+    /// Path to the log file.
+    pub file: Option<PathBuf>,
+    #[serde(default)]
+    /// Log file verbosity.
+    pub level: LevelFilter,
+}
+
+/// Level filter for logging.
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum LevelFilter {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl Default for LevelFilter {
+    fn default() -> Self {
+        LevelFilter::Info
+    }
+}
+
+impl Into<tracing::metadata::LevelFilter> for LevelFilter {
+    fn into(self) -> tracing::metadata::LevelFilter {
+        match self {
+            LevelFilter::Trace => tracing::metadata::LevelFilter::TRACE,
+            LevelFilter::Debug => tracing::metadata::LevelFilter::DEBUG,
+            LevelFilter::Info => tracing::metadata::LevelFilter::INFO,
+            LevelFilter::Warn => tracing::metadata::LevelFilter::WARN,
+            LevelFilter::Error => tracing::metadata::LevelFilter::ERROR,
+        }
+    }
 }
 
 impl Config {

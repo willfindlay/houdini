@@ -11,13 +11,10 @@
 use crate::{cli, CONFIG};
 use anyhow::Result;
 use clap_derive::ArgEnum;
-use std::{fmt::Display, path::PathBuf};
+use std::{ffi::OsString, fmt::Display, path::PathBuf};
 use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{
-    filter::Filtered, layer::Layered, prelude::__tracing_subscriber_SubscriberExt, EnvFilter,
-    Layer, Registry,
-};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Layer, Registry};
 
 /// Formatter to use in the logging subscriber.
 /// [`Auto`] implies pretty if the target is a TTY, JSON otherwise.
@@ -41,26 +38,59 @@ impl Display for LoggingFormat {
     }
 }
 
-fn registry(
-    args: &cli::Cli,
-) -> Layered<Filtered<EnvFilter, tracing::level_filters::LevelFilter, Registry>, Registry> {
-    let filter = EnvFilter::default();
+struct LevelFilterLayer {
+    level: LevelFilter,
+}
 
-    // Set verbosity
-    let filter = match args.verbose {
-        n if n < 0 => filter.with_filter(LevelFilter::OFF),
-        0 => filter.with_filter(LevelFilter::WARN),
-        1 => filter.with_filter(LevelFilter::INFO),
-        2 => filter.with_filter(LevelFilter::DEBUG),
-        _ => filter.with_filter(LevelFilter::TRACE),
+impl LevelFilterLayer {
+    pub fn from_args(args: &cli::Cli) -> Self {
+        let level = match args.verbose {
+            n if n < 0 => LevelFilter::OFF,
+            0 => LevelFilter::WARN,
+            1 => LevelFilter::INFO,
+            2 => LevelFilter::DEBUG,
+            _ => LevelFilter::TRACE,
+        };
+        Self { level }
+    }
+
+    pub fn from_cfg() -> Self {
+        Self {
+            level: CONFIG.log.level.into(),
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> Layer<S> for LevelFilterLayer {
+    fn enabled(
+        &self,
+        metadata: &tracing::Metadata<'_>,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        return self.level.enabled(metadata, ctx);
+    }
+}
+
+fn get_log_file() -> Result<(Option<PathBuf>, Option<OsString>)> {
+    let file = &CONFIG.log.file;
+    let file = match file {
+        Some(f) => f,
+        None => return Ok((None, None)),
     };
 
-    Registry::default().with(filter)
+    let file = PathBuf::from(shellexpand::full(&file.to_string_lossy())?.as_ref());
+    let log_dir = file
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("unable to get log directory from config"))?;
+    let log_file = file
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("unable to get log file name from config"))?;
+
+    Ok((Some(log_dir.to_owned()), Some(log_file.to_owned())))
 }
 
 fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let log_dir = CONFIG.log.file.parent();
-    let log_file = CONFIG.log.file.file_name();
+    let (log_dir, log_file) = get_log_file()?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -75,13 +105,14 @@ fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
         .with_level(true)
         .with_thread_ids(false)
         .with_line_number(true)
-        .with_thread_names(true);
+        .with_thread_names(true)
+        .and_then(LevelFilterLayer::from_args(args));
 
     if let Some(file_appender) = file_appender {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .json();
-        let subscriber = registry(args).with(stdout_layer).with(file_layer);
+        let subscriber = Registry::default().with(stdout_layer).with(file_layer);
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
@@ -89,10 +120,7 @@ fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
 }
 
 fn init_json(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let file = &CONFIG.log.file.to_string_lossy();
-    let file = PathBuf::from(shellexpand::tilde(file).as_ref());
-    let log_dir = file.parent();
-    let log_file = file.file_name();
+    let (log_dir, log_file) = get_log_file()?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -108,21 +136,21 @@ fn init_json(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
         .with_thread_ids(false)
         .with_line_number(true)
         .with_thread_names(true)
-        .json();
+        .json()
+        .and_then(LevelFilterLayer::from_args(args));
 
     if let Some(file_appender) = file_appender {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .json();
-        let subscriber = registry(args).with(stdout_layer).with(file_layer);
+        let subscriber = Registry::default().with(stdout_layer).with(file_layer);
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
     Ok(guard)
 }
 fn init_compact(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let log_dir = CONFIG.log.file.parent();
-    let log_file = CONFIG.log.file.file_name();
+    let (log_dir, log_file) = get_log_file()?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -138,21 +166,21 @@ fn init_compact(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
         .with_thread_ids(false)
         .with_line_number(true)
         .with_thread_names(true)
-        .compact();
+        .compact()
+        .and_then(LevelFilterLayer::from_args(args));
 
     if let Some(file_appender) = file_appender {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .json();
-        let subscriber = registry(args).with(stdout_layer).with(file_layer);
+        let subscriber = Registry::default().with(stdout_layer).with(file_layer);
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
     Ok(guard)
 }
 fn init_pretty(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let log_dir = CONFIG.log.file.parent();
-    let log_file = CONFIG.log.file.file_name();
+    let (log_dir, log_file) = get_log_file()?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -168,13 +196,14 @@ fn init_pretty(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
         .with_thread_ids(false)
         .with_line_number(true)
         .with_thread_names(true)
-        .pretty();
+        .pretty()
+        .and_then(LevelFilterLayer::from_args(args));
 
     if let Some(file_appender) = file_appender {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .json();
-        let subscriber = registry(args).with(stdout_layer).with(file_layer);
+        let subscriber = Registry::default().with(stdout_layer).with(file_layer);
         tracing::subscriber::set_global_default(subscriber)?;
     }
 
