@@ -10,13 +10,12 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use anyhow::Result;
+use std::{fs::File, path::PathBuf};
+
+use anyhow::{Context, Result};
 use clap_derive::Parser;
 
-use crate::{
-    exploits::container::{self, ExploitStrategy},
-    logging::LoggingFormat,
-};
+use crate::{exploits::Plan, logging::LoggingFormat};
 
 /// Describes Houdini's command line interface.
 #[derive(Parser, Debug)]
@@ -37,51 +36,38 @@ pub struct Cli {
 /// Enumerates Houdini's various subcommands.
 #[derive(Parser, Debug)]
 enum Cmd {
-    /// Run through the container-level test suite. Should be called from within
-    /// a container.
-    Container {
-        // /// Name or ID of a docker container image
-        // #[clap(
-        //     long,
-        //     short,
-        //     required = true,
-        //     conflicts_with = "container",
-        //     alias = "img"
-        // )]
-        // image: Option<String>,
-        // /// Name or container ID of a running container
-        // #[clap(long, short, required = true, conflicts_with = "image")]
-        // container: Option<String>,
+    /// Run one or more container exploits and test whether they complete successfully.
+    Run {
         /// The exploit to run.
-        #[clap(arg_enum, min_values = 1, required = true)]
-        exploits: Vec<ExploitStrategy>,
+        #[clap(min_values = 1, required = true)]
+        exploits: Vec<PathBuf>,
     },
 }
 
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
     pub async fn run(self) -> Result<()> {
+        use crate::exploits::ExploitStatus;
         match self.subcmd {
-            Cmd::Container {
-                // image,
-                // container,
-                exploits,
-            } => {
+            Cmd::Run { exploits } => {
                 for exploit in exploits {
-                    match container::run_exploit(exploit.clone()).await {
-                        container::ExploitStatus::Failure { reason } => {
-                            tracing::warn!(
-                                exploit = debug(&exploit),
-                                reason = reason.as_str(),
-                                "Exploit failed"
-                            )
+                    let f = File::open(&exploit).context(format!(
+                        "could not open exploit file {}",
+                        &exploit.display()
+                    ))?;
+                    let plan: Plan = serde_yaml::from_reader(f).context(format!(
+                        "failed to parse exploit file {}",
+                        &exploit.display()
+                    ))?;
+                    let status = plan.run().await;
+                    match status {
+                        ExploitStatus::Undecided
+                        | ExploitStatus::SetupFailure
+                        | ExploitStatus::ExploitFailure => {
+                            tracing::info!(status = ?status, "plan execution FAILED");
                         }
-                        status => {
-                            tracing::info!(
-                                exploit = debug(&exploit),
-                                status = debug(&status),
-                                "Exploit succeeded"
-                            )
+                        ExploitStatus::ExploitSuccess => {
+                            tracing::info!(status = ?status, "plan execution SUCCEEDED");
                         }
                     }
                 }
@@ -91,3 +77,11 @@ impl Cli {
         Ok(())
     }
 }
+
+// fn path_validator(path: &str) -> Result<PathBuf, std::io::Error> {
+//     let path = PathBuf::from(path);
+//     if !path.exists() {
+//         return Err();
+//     }
+//     Ok(path)
+// }

@@ -1,5 +1,6 @@
 [log]
-file = "/var/run/houdini.log.gz"
+file = "~/.houdini/houdini.log"
+level = "info"
 
 [docker]
 client = "docker"

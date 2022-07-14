@@ -12,14 +12,13 @@
 
 #![deny(missing_docs)]
 
-#[macro_use]
-extern crate async_trait;
-
 mod cli;
-pub mod config;
 mod exploits;
-pub mod logging;
 mod report;
+
+pub mod config;
+pub mod docker;
+pub mod logging;
 
 pub use crate::config::CONFIG;
 pub use cli::Cli;

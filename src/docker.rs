@@ -4,6 +4,12 @@
 // Copyright (c) 2022  William Findlay
 //
 // February 25, 2022  William Findlay  Created this.
-//
 
 //! Houdini's interaction with the Docker API.
+
+mod cmd;
+mod image;
+mod util;
+
+pub use cmd::{Command, ExitCode, Stdio};
+pub use image::ImagePullPolicy;
