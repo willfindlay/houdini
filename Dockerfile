@@ -6,7 +6,7 @@
 # February 25, 2022  William Findlay  Created this.
 #
 
-FROM rust:1.59 as builder
+FROM rust:1.62 as builder
 WORKDIR /usr/src
 RUN rustup default nightly
 RUN rustup target add x86_64-unknown-linux-musl
@@ -24,6 +24,6 @@ COPY src ./src
 COPY bin ./bin
 RUN cargo install --target x86_64-unknown-linux-musl --path .
 
-FROM ubuntu:latest
+FROM scratch
 COPY --from=builder /usr/local/cargo/bin/houdini .
-CMD ["/houdini"]
+ENTRYPOINT ["/houdini"]

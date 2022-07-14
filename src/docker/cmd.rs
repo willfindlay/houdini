@@ -11,14 +11,9 @@
 use std::ops::Deref;
 
 use anyhow::Result;
-use bollard::{
-    exec::{CreateExecOptions, StartExecOptions},
-    Docker, API_DEFAULT_VERSION,
-};
+use bollard::exec::{CreateExecOptions, StartExecOptions};
 // use docker_api::{api::ContainerId, Docker, Exec, ExecContainerOpts};
 use futures::StreamExt;
-
-use crate::CONFIG;
 
 /// Determines what the Command does with stdio from the container exec.
 pub enum Stdio {
@@ -121,69 +116,8 @@ impl Command {
         self
     }
 
-    // async fn exec(&mut self) -> Result<Output> {
-    //     let client = Docker::unix(&CONFIG.docker.socket);
-    //     let cmd = std::iter::once(&self.command).chain(&self.args);
-
-    //     let builder = ExecContainerOpts::builder()
-    //         .cmd(cmd)
-    //         .tty(self.tty)
-    //         .privileged(self.privileged);
-    //     let opts = builder.build();
-
-    //     let mut output = Output::default();
-
-    //     let exec = Exec::create(client, &self.id, &opts).await?;
-    //     let mut stream = exec.start();
-    //     while let Some(res) = stream.next().await {
-    //         if let Ok(tty) = res {
-    //             match tty {
-    //                 docker_api::conn::TtyChunk::StdIn(_) => {
-    //                     // docker_api doesn't seem to support this from exec endpoint atm
-    //                     // TODO maybe switch to bollard which does support this
-    //                     unreachable!()
-    //                 }
-    //                 docker_api::conn::TtyChunk::StdOut(mut buf) => match self.stdout {
-    //                     Some(Stdio::Piped) => {
-    //                         output.stdout.append(&mut buf);
-    //                     }
-    //                     Some(Stdio::Null) => {}
-    //                     Some(Stdio::Inherit) | None => {
-    //                         if let Err(e) = std::io::stdout().write_all(&mut buf) {
-    //                             tracing::error!(error = ?e, "failed to write container exec stdout");
-    //                         }
-    //                     }
-    //                 },
-    //                 docker_api::conn::TtyChunk::StdErr(mut buf) => match self.stderr {
-    //                     Some(Stdio::Piped) => {
-    //                         output.stderr.append(&mut buf);
-    //                     }
-    //                     Some(Stdio::Null) => {}
-    //                     Some(Stdio::Inherit) | None => {
-    //                         if let Err(e) = std::io::stderr().write_all(&mut buf) {
-    //                             tracing::error!(error = ?e, "failed to write container exec stderr");
-    //                         }
-    //                     }
-    //                 },
-    //             }
-    //         }
-    //     }
-
-    //     let info = exec.inspect().await?;
-    //     output.code = info.exit_code.map(ExitCode);
-    //     Ok(output)
-    // }
-
     async fn exec(&mut self) -> Result<Output> {
-        let client = Docker::connect_with_unix(
-            CONFIG
-                .docker
-                .socket
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("bad docker socket path in config"))?,
-            60,
-            API_DEFAULT_VERSION,
-        )?;
+        let client = super::util::client()?;
 
         let opts = CreateExecOptions {
             attach_stdin: Some(false),

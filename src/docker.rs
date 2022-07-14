@@ -9,6 +9,7 @@
 
 mod cmd;
 mod image;
+mod util;
 
 pub use cmd::{Command, ExitCode, Stdio};
 pub use image::ImagePullPolicy;
