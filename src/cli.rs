@@ -69,6 +69,9 @@ impl Cli {
                         ExploitStatus::ExploitSuccess => {
                             tracing::info!(status = ?status, "plan execution SUCCEEDED");
                         }
+                        ExploitStatus::Skip => {
+                            tracing::info!(status = ?status, "plan execution SKIPPED");
+                        }
                     }
                 }
             }
