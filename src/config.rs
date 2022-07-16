@@ -72,9 +72,9 @@ impl Default for LevelFilter {
     }
 }
 
-impl Into<tracing::metadata::LevelFilter> for LevelFilter {
-    fn into(self) -> tracing::metadata::LevelFilter {
-        match self {
+impl From<LevelFilter> for tracing::metadata::LevelFilter {
+    fn from(f: LevelFilter) -> Self {
+        match f {
             LevelFilter::Trace => tracing::metadata::LevelFilter::TRACE,
             LevelFilter::Debug => tracing::metadata::LevelFilter::DEBUG,
             LevelFilter::Info => tracing::metadata::LevelFilter::INFO,

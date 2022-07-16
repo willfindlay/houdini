@@ -84,10 +84,8 @@ async fn pull_image(
 
     let client = super::util::client()?;
 
-    if let Ok(_) = client.inspect_image(image).await {
-        if !always {
-            return Ok(());
-        }
+    if client.inspect_image(image).await.is_ok() && !always {
+        return Ok(());
     }
 
     let opts = bollard::image::CreateImageOptions {
@@ -123,16 +121,14 @@ async fn pull_image(
 
     let digest = inspect
         .repo_digests
-        .map(|l| l.get(0).cloned())
-        .flatten()
-        .map(|s| {
+        .and_then(|l| l.get(0).cloned())
+        .and_then(|s| {
             if let Some((_, digest)) = s.split_once("sha256:") {
                 Some(digest.to_owned())
             } else {
                 None
             }
-        })
-        .flatten();
+        });
 
     match (sha256sum, digest.as_ref()) {
         (Some(d), None) => {
