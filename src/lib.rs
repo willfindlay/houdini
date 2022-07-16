@@ -12,7 +12,6 @@
 
 mod cli;
 mod exploits;
-mod report;
 
 pub mod config;
 pub mod docker;
