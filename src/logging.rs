@@ -54,6 +54,8 @@ impl LevelFilterLayer {
         Self { level }
     }
 
+    // TODO: Allow this to be dead code for now. Will be used later.
+    #[allow(dead_code)]
     pub fn from_cfg() -> Self {
         Self {
             level: CONFIG.log.level.into(),
@@ -67,7 +69,7 @@ impl<S: tracing::Subscriber> Layer<S> for LevelFilterLayer {
         metadata: &tracing::Metadata<'_>,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) -> bool {
-        return self.level.enabled(metadata, ctx);
+        self.level.enabled(metadata, ctx)
     }
 }
 
