@@ -15,7 +15,13 @@ use std::{fs::File, path::PathBuf};
 use anyhow::{Context, Result};
 use clap_derive::Parser;
 
-use crate::{exploits::Plan, logging::LoggingFormat};
+use crate::{
+    exploits::{
+        report::{PlanReport, Report},
+        Plan,
+    },
+    logging::LoggingFormat,
+};
 
 /// Describes Houdini's command line interface.
 #[derive(Parser, Debug)]
@@ -50,6 +56,8 @@ impl Cli {
         use crate::exploits::ExploitStatus;
         match self.subcmd {
             Cmd::Run { exploits } => {
+                let mut report = Report::default();
+
                 for exploit in exploits {
                     let f = File::open(&exploit).context(format!(
                         "could not open exploit file {}",
@@ -59,7 +67,10 @@ impl Cli {
                         "failed to parse exploit file {}",
                         &exploit.display()
                     ))?;
-                    let status = plan.run().await;
+
+                    let mut plan_report = PlanReport::new(&plan.name);
+
+                    let status = plan.run(Some(&mut plan_report)).await;
                     match status {
                         ExploitStatus::Undecided
                         | ExploitStatus::SetupFailure
@@ -73,7 +84,13 @@ impl Cli {
                             tracing::info!(status = ?status, "plan execution SKIPPED");
                         }
                     }
+
+                    report.add(plan_report);
                 }
+
+                report
+                    .write_to_disk()
+                    .context("failed to write report to disk")?;
             }
         }
 

@@ -2,6 +2,9 @@
 file = "~/.houdini/houdini.log"
 level = "info"
 
+[reports]
+dir = "~/.houdini/reports"
+
 [docker]
 client = "docker"
 daemon = "dockerd"

@@ -27,6 +27,8 @@ pub struct Config {
     pub docker: Docker,
     /// Configuration specific to the logger.
     pub log: Log,
+    /// Configuration specific to exploit reports.
+    pub reports: Reports,
 }
 
 /// Configuration specific to Docker.
@@ -40,6 +42,7 @@ pub struct Docker {
     /// Name of the container runtime binary.
     pub runtime: String,
     /// Full path to the Docker socket.
+    #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
     pub socket: PathBuf,
 }
 
@@ -48,10 +51,21 @@ pub struct Docker {
 #[serde(rename_all = "camelCase")]
 pub struct Log {
     /// Path to the log file.
+    #[serde(default)]
+    #[serde(deserialize_with = "serde_helpers::expand_option_pathbuf")]
     pub file: Option<PathBuf>,
     #[serde(default)]
     /// Log file verbosity.
     pub level: LevelFilter,
+}
+
+/// Configuration specific to Houdini's exploit reports.
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Reports {
+    /// Path to the exploit reports dir.
+    #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
+    pub dir: PathBuf,
 }
 
 /// Level filter for logging.
@@ -126,4 +140,41 @@ fn get_config_file() -> Option<PathBuf> {
     config_dir
         .map(|d| d.join("config.toml"))
         .and_then(|p| p.canonicalize().ok())
+}
+
+mod serde_helpers {
+    use serde::{Deserialize, Deserializer};
+    use std::path::PathBuf;
+
+    pub fn expand_pathbuf<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let p = PathBuf::deserialize(deserializer)?;
+        let p = shellexpand::full(
+            p.to_str()
+                .ok_or_else(|| serde::de::Error::custom("path is not a UTF-8 string"))?,
+        )
+        .map_err(serde::de::Error::custom)?;
+        let p = p.as_ref();
+        Ok(PathBuf::from(p))
+    }
+
+    pub fn expand_option_pathbuf<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let p: Option<PathBuf> = Option::deserialize(deserializer)?;
+        if let Some(p) = p {
+            let p = shellexpand::full(
+                p.to_str()
+                    .ok_or_else(|| serde::de::Error::custom("path is not a UTF-8 string"))?,
+            )
+            .map_err(serde::de::Error::custom)?;
+            let p = p.as_ref();
+            Ok(Some(PathBuf::from(p)))
+        } else {
+            Ok(None)
+        }
+    }
 }
