@@ -32,14 +32,9 @@ pub async fn reap_container(name: &str) -> Result<()> {
     };
     let mut stream = client.wait_container(name, Some(opts));
 
-    while let Some(res) = stream.next().await {
-        let res = res.context("failed to wait for container to be removed")?;
-        if let Some(err) = res.error {
-            return Err(
-                anyhow::anyhow!("{}", err.message.unwrap_or_else(|| "unknown".into()))
-                    .context("failed to wait for container to be removed"),
-            );
-        }
+    while stream.next().await.is_some() {
+        // The could return an error if the container has already been removed, but we
+        // don't care. So do nothing here.
     }
 
     Ok(())

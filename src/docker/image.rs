@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 /// Defines policy for what to do about acquiring a container image for an exploit step.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum ImagePullPolicy {
     /// Never build or pull the image.

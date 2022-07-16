@@ -80,7 +80,6 @@ fn get_log_file() -> Result<(Option<PathBuf>, Option<OsString>)> {
         None => return Ok((None, None)),
     };
 
-    let file = PathBuf::from(shellexpand::full(&file.to_string_lossy())?.as_ref());
     let log_dir = file
         .parent()
         .ok_or_else(|| anyhow::anyhow!("unable to get log directory from config"))?;

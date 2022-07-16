@@ -6,9 +6,10 @@
 // February 25, 2022  William Findlay  Created this.
 //
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::StructOpt;
 use houdini::{Cli, CONFIG};
+use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,8 +23,11 @@ async fn main() -> Result<()> {
     log_panics::init();
     human_panic::setup_panic!();
 
-    // Initialize config file
-    let _span = tracing::trace_span!("main", args = ?&args, config = ?&*CONFIG).entered();
+    // Log initial configs
+    tracing::debug!(args = ?&args, "cli args");
+    tracing::debug!(config = ?&*CONFIG, "houdini config");
+
+    init().context("failed to initialize environment")?;
 
     // After parsing arguments, we can consume them and run the corresponding subcommand.
     match args.run().await {
@@ -36,4 +40,29 @@ async fn main() -> Result<()> {
             Err(e)
         }
     }
+}
+
+fn init() -> Result<()> {
+    // Create reports dir
+    let dir = &CONFIG.reports.dir;
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o755)
+        .create(dir)
+        .context(format!("failed to create reports dir {}", dir.display()))?;
+
+    // Create log dir dir
+    if let Some(file) = &CONFIG.log.file {
+        let dir = file
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("no parent directory for log file"))?;
+
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o755)
+            .create(dir)
+            .context(format!("failed to create log dir {}", dir.display()))?;
+    }
+
+    Ok(())
 }
