@@ -1,0 +1,44 @@
+on:
+  pull_request:
+    paths:
+      - "**Cargo.toml"
+      - "**Cargo.lock"
+      - "**.rs"
+      - "exploits/**"
+  push:
+    branches:
+      - main
+
+name: Unit Test
+
+jobs:
+  test:
+    name: Run Unit Tests
+    env:
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker-practice/actions-setup-docker@v1
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Cache dependencies
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-dependencies
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            target
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
+      - name: Run tests
+        run: |
+          cargo test

@@ -1,5 +1,9 @@
 on:
   pull_request:
+    paths:
+      - "**Cargo.toml"
+      - "**Cargo.lock"
+      - "**.rs"
   push:
     branches:
       - main
