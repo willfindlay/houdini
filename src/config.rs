@@ -24,17 +24,17 @@ lazy_static! {
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     /// Configuration specific to Docker.
-    pub docker: Docker,
+    pub docker: DockerConfig,
     /// Configuration specific to the logger.
-    pub log: Log,
+    pub log: LogConfig,
     /// Configuration specific to exploit reports.
-    pub reports: Reports,
+    pub reports: ReportConfig,
 }
 
 /// Configuration specific to Docker.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Docker {
+pub struct DockerConfig {
     /// Name of the Docker client binary.
     pub client: String,
     /// Name of the Docker daemon binary.
@@ -49,7 +49,7 @@ pub struct Docker {
 /// Configuration specific to Houdini's logger.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Log {
+pub struct LogConfig {
     /// Path to the log file.
     #[serde(default)]
     #[serde(deserialize_with = "serde_helpers::expand_option_pathbuf")]
@@ -62,7 +62,7 @@ pub struct Log {
 /// Configuration specific to Houdini's exploit reports.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct Reports {
+pub struct ReportConfig {
     /// Path to the exploit reports dir.
     #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
     pub dir: PathBuf,
