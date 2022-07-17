@@ -16,10 +16,7 @@ use anyhow::{Context, Result};
 use clap_derive::Parser;
 
 use crate::{
-    exploits::{
-        report::{PlanReport, Report},
-        Plan,
-    },
+    exploits::{report::Report, Plan},
     logging::LoggingFormat,
 };
 
@@ -68,9 +65,7 @@ impl Cli {
                         &exploit.display()
                     ))?;
 
-                    let mut plan_report = PlanReport::new(&plan.name);
-
-                    let status = plan.run(Some(&mut plan_report)).await;
+                    let status = plan.run(Some(&mut report)).await;
                     match status {
                         ExploitStatus::Undecided
                         | ExploitStatus::SetupFailure
@@ -84,8 +79,6 @@ impl Cli {
                             tracing::info!(status = ?status, "plan execution SKIPPED");
                         }
                     }
-
-                    report.add(plan_report);
                 }
 
                 report
