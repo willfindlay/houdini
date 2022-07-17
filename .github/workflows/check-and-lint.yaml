@@ -24,6 +24,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --all --all-targets --all-features
 
   fmt:
     name: Rustfmt
