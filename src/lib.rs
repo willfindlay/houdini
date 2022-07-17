@@ -12,6 +12,7 @@
 
 mod cli;
 mod exploits;
+mod testutils;
 
 pub mod config;
 pub mod docker;
