@@ -48,6 +48,7 @@ pub async fn spawn_container(
     cmd: Option<&str>,
     volumes: &[String],
     privileged: bool,
+    security_options: &[String],
 ) -> Result<()> {
     image_policy
         .acquire_image(image)
@@ -60,6 +61,7 @@ pub async fn spawn_container(
     let host_config = HostConfig {
         binds: Some(volumes.to_owned()),
         auto_remove: Some(true),
+        security_opt: Some(security_options.to_owned()),
         // mounts: todo!(),
         // cap_add: todo!(),
         // cap_drop: todo!(),
