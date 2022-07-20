@@ -8,15 +8,19 @@
 
 //! The logic used to configure Houdini.
 
-use anyhow::Result;
-use directories::ProjectDirs;
-use lazy_static::lazy_static;
-use serde::Deserialize;
 use std::path::PathBuf;
 
-lazy_static! {
-    /// The shared configuration object for Houdini.
-    pub static ref CONFIG: Config = Config::new().expect("Failed to initialize config");
+use anyhow::Result;
+use async_once_cell::OnceCell;
+use directories::ProjectDirs;
+use serde::Deserialize;
+
+static CONFIG: OnceCell<Config> = OnceCell::new();
+
+pub async fn config<'a>() -> &'a Config {
+    CONFIG
+        .get_or_init(async move { Config::new().expect("failed to initialize config") })
+        .await
 }
 
 /// The base level config for Houdini.
