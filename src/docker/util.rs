@@ -10,12 +10,13 @@
 use anyhow::{Context, Result};
 use bollard::{Docker, API_DEFAULT_VERSION};
 
-use crate::config::CONFIG;
+use crate::config;
 
 /// Spawn a bollard::Docker using the configured Unix socket and the default API version.
-pub fn client() -> Result<Docker> {
+pub async fn client() -> Result<Docker> {
     Docker::connect_with_unix(
-        CONFIG
+        config()
+            .await
             .docker
             .socket
             .to_str()

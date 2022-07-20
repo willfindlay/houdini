@@ -18,7 +18,7 @@ use super::{util::client, ImagePullPolicy};
 
 /// Clean up a container by removing it and waiting for it.
 pub async fn reap_container(name: &str) -> Result<()> {
-    let client = client()?;
+    let client = client().await?;
 
     let opts = RemoveContainerOptions {
         v: true,
@@ -55,7 +55,7 @@ pub async fn spawn_container(
         .await
         .context("failed to acquire container image")?;
 
-    let client = client()?;
+    let client = client().await?;
 
     let opts = CreateContainerOptions { name };
     let host_config = HostConfig {
@@ -95,7 +95,7 @@ pub async fn spawn_container(
 
 /// Kill a container.
 pub async fn kill_container(name: &str) -> Result<()> {
-    let client = client()?;
+    let client = client().await?;
 
     client
         .kill_container::<&str>(name, None)

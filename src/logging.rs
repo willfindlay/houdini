@@ -8,7 +8,7 @@
 
 //! This module contains helper functions to set up logging for Houdini.
 
-use crate::{cli, CONFIG};
+use crate::{cli, config};
 use anyhow::Result;
 use clap_derive::ArgEnum;
 use std::{ffi::OsString, fmt::Display, path::PathBuf};
@@ -56,9 +56,9 @@ impl LevelFilterLayer {
 
     // TODO: Allow this to be dead code for now. Will be used later.
     #[allow(dead_code)]
-    pub fn from_cfg() -> Self {
+    pub async fn from_cfg() -> Self {
         Self {
-            level: CONFIG.log.level.into(),
+            level: config().await.log.level.into(),
         }
     }
 }
@@ -73,8 +73,8 @@ impl<S: tracing::Subscriber> Layer<S> for LevelFilterLayer {
     }
 }
 
-fn get_log_file() -> Result<(Option<PathBuf>, Option<OsString>)> {
-    let file = &CONFIG.log.file;
+async fn get_log_file() -> Result<(Option<PathBuf>, Option<OsString>)> {
+    let file = &config().await.log.file;
     let file = match file {
         Some(f) => f,
         None => return Ok((None, None)),
@@ -90,8 +90,8 @@ fn get_log_file() -> Result<(Option<PathBuf>, Option<OsString>)> {
     Ok((Some(log_dir.to_owned()), Some(log_file.to_owned())))
 }
 
-fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let (log_dir, log_file) = get_log_file()?;
+async fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
+    let (log_dir, log_file) = get_log_file().await?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -120,8 +120,8 @@ fn init_human(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
     Ok(guard)
 }
 
-fn init_json(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let (log_dir, log_file) = get_log_file()?;
+async fn init_json(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
+    let (log_dir, log_file) = get_log_file().await?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -150,8 +150,9 @@ fn init_json(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
 
     Ok(guard)
 }
-fn init_compact(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let (log_dir, log_file) = get_log_file()?;
+
+async fn init_compact(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
+    let (log_dir, log_file) = get_log_file().await?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -180,8 +181,9 @@ fn init_compact(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
 
     Ok(guard)
 }
-fn init_pretty(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
-    let (log_dir, log_file) = get_log_file()?;
+
+async fn init_pretty(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
+    let (log_dir, log_file) = get_log_file().await?;
 
     let (file_appender, guard) = if let (Some(log_dir), Some(log_file)) = (log_dir, log_file) {
         let file_appender = tracing_appender::rolling::daily(log_dir, log_file);
@@ -212,7 +214,7 @@ fn init_pretty(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
 }
 
 /// Initialize the logger by setting the right subscriber.
-pub fn init(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
+pub async fn init(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
     let tracing_format = match args.format {
         LoggingFormat::Auto => {
             if atty::is(atty::Stream::Stderr) {
@@ -226,10 +228,10 @@ pub fn init(args: &cli::Cli) -> Result<Option<WorkerGuard>> {
 
     let guard = match tracing_format {
         LoggingFormat::Auto => unreachable!(),
-        LoggingFormat::Json => init_json(args)?,
-        LoggingFormat::Pretty => init_pretty(args)?,
-        LoggingFormat::Full => init_human(args)?,
-        LoggingFormat::Compact => init_compact(args)?,
+        LoggingFormat::Json => init_json(args).await?,
+        LoggingFormat::Pretty => init_pretty(args).await?,
+        LoggingFormat::Full => init_human(args).await?,
+        LoggingFormat::Compact => init_compact(args).await?,
     };
 
     tracing_log::LogTracer::init()?;

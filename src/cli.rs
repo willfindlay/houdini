@@ -83,6 +83,7 @@ impl Cli {
 
                 report
                     .write_to_disk()
+                    .await
                     .context("failed to write report to disk")?;
             }
         }
