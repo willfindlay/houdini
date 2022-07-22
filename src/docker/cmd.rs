@@ -117,7 +117,7 @@ impl Command {
     }
 
     async fn exec(&mut self) -> Result<Output> {
-        let client = super::util::client().await?;
+        let client = super::util::client()?;
 
         let opts = CreateExecOptions {
             attach_stdin: Some(false),

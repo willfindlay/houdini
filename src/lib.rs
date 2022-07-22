@@ -18,5 +18,5 @@ pub mod config;
 pub mod docker;
 pub mod logging;
 
-pub use crate::config::config;
+pub use crate::config::CONFIG;
 pub use cli::Cli;

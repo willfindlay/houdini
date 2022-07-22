@@ -8,7 +8,7 @@
 
 use anyhow::{Context, Result};
 use clap::StructOpt;
-use houdini::{config, Cli};
+use houdini::{Cli, CONFIG};
 use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt};
 
 #[tokio::main]
@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     // Initialize the "tracing" logger.
-    let _guard = houdini::logging::init(&args).await?;
+    let _guard = houdini::logging::init(&args)?;
 
     // We want to log panics in debug mode, but produce a human panic message in release.
     log_panics::init();
@@ -25,9 +25,9 @@ async fn main() -> Result<()> {
 
     // Log initial configs
     tracing::debug!(args = ?&args, "cli args");
-    tracing::debug!(config = ?&*config().await, "houdini config");
+    tracing::debug!(config = ?&*CONFIG, "houdini config");
 
-    init().await.context("failed to initialize environment")?;
+    init().context("failed to initialize environment")?;
 
     // After parsing arguments, we can consume them and run the corresponding subcommand.
     match args.run().await {
@@ -42,9 +42,9 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn init() -> Result<()> {
+fn init() -> Result<()> {
     // Create reports dir
-    let dir = &config().await.reports.dir;
+    let dir = &CONFIG.reports.dir;
     DirBuilder::new()
         .recursive(true)
         .mode(0o755)
@@ -52,7 +52,7 @@ async fn init() -> Result<()> {
         .context(format!("failed to create reports dir {}", dir.display()))?;
 
     // Create log dir dir
-    if let Some(file) = &config().await.log.file {
+    if let Some(file) = &CONFIG.log.file {
         let dir = file
             .parent()
             .ok_or_else(|| anyhow::anyhow!("no parent directory for log file"))?;

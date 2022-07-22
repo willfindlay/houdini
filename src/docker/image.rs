@@ -82,7 +82,7 @@ async fn pull_image(
 ) -> Result<()> {
     let tag = image.split_once(':').map(|x| x.1).unwrap_or("latest");
 
-    let client = super::util::client().await?;
+    let client = super::util::client()?;
 
     if client.inspect_image(image).await.is_ok() && !always {
         return Ok(());
@@ -150,7 +150,7 @@ async fn build_image<P: AsRef<Path>>(
     dockerfile: P,
     build_args: &HashMap<String, String>,
 ) -> Result<()> {
-    let client = super::util::client().await?;
+    let client = super::util::client()?;
 
     let tag = image.split_once(':').map(|x| x.1).unwrap_or("latest");
 
