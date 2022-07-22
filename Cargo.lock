@@ -677,6 +677,7 @@ dependencies = [
  "humantime-serde",
  "hyper",
  "jwalk",
+ "lazy_static",
  "log-panics",
  "nix",
  "serde",
