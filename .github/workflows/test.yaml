@@ -5,6 +5,7 @@ on:
       - "**Cargo.lock"
       - "**.rs"
       - "exploits/**"
+      - ".github/workflows/**.yaml"
   push:
     branches:
       - main
@@ -14,9 +15,6 @@ name: Unit Test
 jobs:
   test:
     name: Run Unit Tests
-    env:
-      CARGO_INCREMENTAL: 0
-      RUSTFLAGS: -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off
     runs-on: ubuntu-latest
     steps:
       - uses: docker-practice/actions-setup-docker@v1
@@ -24,7 +22,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -39,6 +37,20 @@ jobs:
             ~/.cargo/registry/cache
             target
           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('Cargo.lock') }}
-      - name: Run tests
-        run: |
-          cargo test
+      - name: Cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features --no-fail-fast
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Copt-level=0'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Copt-level=0'
+      - name: Code coverage
+        id: coverage
+        uses: actions-rs/grcov@v0.1
+      - name: Upload to CodeCov
+        uses: codecov/codecov-action@v1
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: true
