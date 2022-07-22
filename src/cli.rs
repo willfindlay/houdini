@@ -10,7 +10,8 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
+use tokio::fs::File;
 
 use anyhow::{Context, Result};
 use clap_derive::Parser;
@@ -56,14 +57,13 @@ impl Cli {
                 let mut report = Report::default();
 
                 for exploit in exploits {
-                    let f = File::open(&exploit).context(format!(
+                    let f = File::open(&exploit).await.context(format!(
                         "could not open exploit file {}",
                         &exploit.display()
                     ))?;
-                    let plan: Plan = serde_yaml::from_reader(f).context(format!(
-                        "failed to parse exploit file {}",
-                        &exploit.display()
-                    ))?;
+                    let plan: Plan = serde_yaml::from_reader(f.into_std().await).context(
+                        format!("failed to parse exploit file {}", &exploit.display()),
+                    )?;
 
                     let status = plan.run(Some(&mut report)).await;
                     match status {
@@ -83,6 +83,7 @@ impl Cli {
 
                 report
                     .write_to_disk()
+                    .await
                     .context("failed to write report to disk")?;
             }
         }
