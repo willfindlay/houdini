@@ -33,9 +33,11 @@ config = { version = "0.13.1", features = ["toml"] }
 directories = "4.0.1"
 flate2 = "1.0.24"
 futures = "0.3.21"
+gitignore = "1.0.7"
 human-panic = "1.0.3"
 humantime-serde = "1.1.1"
 hyper = "0.14.20"
+jwalk = "0.6.0"
 lazy_static = "1.4.0"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 nix = { version = "0.24.2", features = ["feature"] }
@@ -44,7 +46,6 @@ serde_json = "1.0.82"
 serde_yaml = "0.8.26"
 shellexpand = "2.1.0"
 tar = "0.4.38"
-tempfile = "3.3.0"
 tokio = { version = "1.20.1", features = ["full"] }
 tokio-util = { version = "0.7.3", features = ["codec"] }
 tracing = "0.1.35"

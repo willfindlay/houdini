@@ -12,6 +12,7 @@
 
 mod cli;
 mod exploits;
+mod serde_defaults;
 mod testutils;
 
 pub mod config;
