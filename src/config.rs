@@ -21,7 +21,7 @@ lazy_static! {
 
 /// The base level config for Houdini.
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     /// Configuration specific to Docker.
     pub docker: DockerConfig,
@@ -33,7 +33,7 @@ pub struct Config {
 
 /// Configuration specific to Docker.
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DockerConfig {
     /// Name of the Docker client binary.
     pub client: String,
@@ -48,7 +48,7 @@ pub struct DockerConfig {
 
 /// Configuration specific to Houdini's logger.
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogConfig {
     /// Path to the log file.
     #[serde(default)]
@@ -61,7 +61,7 @@ pub struct LogConfig {
 
 /// Configuration specific to Houdini's exploit reports.
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReportConfig {
     /// Path to the exploit reports dir.
     #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
@@ -70,7 +70,7 @@ pub struct ReportConfig {
 
 /// Level filter for logging.
 #[derive(Deserialize, Debug, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[allow(missing_docs)]
 pub enum LevelFilter {
     Trace,
