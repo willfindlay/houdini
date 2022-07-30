@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// Defines policy for what to do about acquiring a container image for an exploit step.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum ImagePullPolicy {
     /// Never build or pull the image.
     /// Requires that a viable image is always present locally.
@@ -53,7 +53,7 @@ impl ImagePullPolicy {
 
 /// Options for pulling an image.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PullOpts {
     #[serde(default = "crate::serde_defaults::default_true")]
     /// Should we always pull even when the image exists on the host? Defaults to true.
@@ -135,7 +135,7 @@ impl PullOpts {
 
 /// Options for building an image.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BuildOpts {
     /// Path to Dockerfile.
     dockerfile: PathBuf,
