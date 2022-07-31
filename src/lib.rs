@@ -11,9 +11,9 @@
 //! anyway---just be warned that many aspects of this library are specific to Houdini.)
 
 mod cli;
-mod exploits;
 mod serde_defaults;
 mod testutils;
+mod tricks;
 
 pub mod config;
 pub mod docker;

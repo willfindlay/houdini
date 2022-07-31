@@ -17,8 +17,8 @@ use anyhow::{Context, Result};
 use clap_derive::Parser;
 
 use crate::{
-    exploits::{report::Report, Plan},
     logging::LoggingFormat,
+    tricks::{report::Report, status::Status, Trick},
 };
 
 /// Describes Houdini's command line interface.
@@ -51,7 +51,6 @@ enum Cmd {
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
     pub async fn run(self) -> Result<()> {
-        use crate::exploits::ExploitStatus;
         match self.subcmd {
             Cmd::Run { exploits } => {
                 let mut report = Report::default();
@@ -61,21 +60,19 @@ impl Cli {
                         "could not open exploit file {}",
                         &exploit.display()
                     ))?;
-                    let plan: Plan = serde_yaml::from_reader(f.into_std().await).context(
+                    let plan: Trick = serde_yaml::from_reader(f.into_std().await).context(
                         format!("failed to parse exploit file {}", &exploit.display()),
                     )?;
 
                     let status = plan.run(Some(&mut report)).await;
                     match status {
-                        ExploitStatus::Undecided
-                        | ExploitStatus::SetupFailure
-                        | ExploitStatus::ExploitFailure => {
+                        Status::Undecided | Status::SetupFailure | Status::ExploitFailure => {
                             tracing::info!(status = ?status, "plan execution FAILED");
                         }
-                        ExploitStatus::ExploitSuccess => {
+                        Status::ExploitSuccess => {
                             tracing::info!(status = ?status, "plan execution SUCCEEDED");
                         }
-                        ExploitStatus::Skip => {
+                        Status::Skip => {
                             tracing::info!(status = ?status, "plan execution SKIPPED");
                         }
                     }
@@ -91,11 +88,3 @@ impl Cli {
         Ok(())
     }
 }
-
-// fn path_validator(path: &str) -> Result<PathBuf, std::io::Error> {
-//     let path = PathBuf::from(path);
-//     if !path.exists() {
-//         return Err();
-//     }
-//     Ok(path)
-// }

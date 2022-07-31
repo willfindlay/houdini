@@ -10,9 +10,11 @@
 use anyhow::{Context as _, Result};
 use bollard::{
     container::{Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions},
+    exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     models::HostConfig,
 };
 use futures::StreamExt;
+use std::ops::Deref;
 
 use super::{util::client, ImagePullPolicy};
 
@@ -101,4 +103,109 @@ pub async fn kill_container(name: &str) -> Result<()> {
         .kill_container::<&str>(name, None)
         .await
         .context("failed to kill container")
+}
+
+/// Run a command in a container.
+pub async fn run_command(
+    name: &str,
+    cmd: &str,
+    args: &[&str],
+    privileged: bool,
+    tty: bool,
+) -> Result<()> {
+    let client = client()?;
+
+    let opts = CreateExecOptions {
+        attach_stdin: Some(false),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        tty: Some(tty),
+        cmd: Some(
+            std::iter::once(cmd)
+                .chain(args.iter().copied())
+                .collect::<Vec<&str>>(),
+        ),
+        privileged: Some(privileged),
+        ..Default::default()
+    };
+
+    let exec = client
+        .create_exec(name, opts)
+        .await
+        .context("failed to create exec object")?
+        .id;
+
+    let opts = StartExecOptions {
+        detach: false,
+        ..Default::default()
+    };
+
+    let results = client
+        .start_exec(&exec, Some(opts))
+        .await
+        .context("failed to start exec")?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    match results {
+        StartExecResults::Attached { mut output, .. } => {
+            while let Some(Ok(output)) = output.next().await {
+                match output {
+                    bollard::container::LogOutput::StdErr { message } => {
+                        stderr.append(&mut message.iter().cloned().collect())
+                    }
+                    bollard::container::LogOutput::StdOut { message } => {
+                        stdout.append(&mut message.iter().cloned().collect())
+                    }
+                    _ => continue,
+                }
+            }
+        }
+        StartExecResults::Detached => unreachable!(),
+    }
+
+    match String::from_utf8(stdout) {
+        Ok(stdout) => tracing::debug!(cmd = ?cmd, args = ?args, "command stdout:\n{}", stdout),
+        Err(e) => {
+            tracing::debug!(err = ?e, cmd = ?cmd, args = ?args, "failed to parse command stdout")
+        }
+    }
+
+    match String::from_utf8(stderr) {
+        Ok(stderr) => tracing::debug!(cmd = ?cmd, args = ?args, "command stderr:\n{}", stderr),
+        Err(e) => {
+            tracing::debug!(err = ?e, cmd = ?cmd, args = ?args, "failed to parse command stderr")
+        }
+    }
+
+    let inspect = client
+        .inspect_exec(&exec)
+        .await
+        .context("failed to inspect exec result")?;
+    let code = inspect.exit_code.map(ExitCode);
+
+    match code {
+        None => anyhow::bail!("unknown exit status"),
+        Some(c) if !c.success() => anyhow::bail!("command failed with {}", *c),
+        Some(_) => Ok(()),
+    }
+}
+
+/// Wraps an exit code for a container exec.
+pub struct ExitCode(pub i64);
+
+impl ExitCode {
+    /// Was the command successful?
+    pub fn success(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Deref for ExitCode {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
