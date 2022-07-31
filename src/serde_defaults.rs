@@ -7,7 +7,7 @@
 
 //! Default helpers for serde types.
 
-use crate::exploits::ExploitStatus;
+use crate::tricks::status::Status;
 
 pub fn default_true() -> bool {
     true
@@ -17,12 +17,12 @@ pub fn default_false() -> bool {
     false
 }
 
-pub fn default_setup_failure() -> ExploitStatus {
-    ExploitStatus::SetupFailure
+pub fn default_setup_failure() -> Status {
+    Status::SetupFailure
 }
 
-pub fn default_skip() -> ExploitStatus {
-    ExploitStatus::Skip
+pub fn default_skip() -> Status {
+    Status::Skip
 }
 
 #[cfg(test)]
@@ -34,8 +34,8 @@ mod tests {
         assert_eq!(default_true(), true);
         assert_eq!(default_false(), false);
 
-        assert_eq!(default_setup_failure(), ExploitStatus::SetupFailure);
+        assert_eq!(default_setup_failure(), Status::SetupFailure);
 
-        assert_eq!(default_skip(), ExploitStatus::Skip);
+        assert_eq!(default_skip(), Status::Skip);
     }
 }

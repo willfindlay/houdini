@@ -21,8 +21,9 @@ use versions::Versioning;
 use crate::CONFIG;
 
 use super::{
-    version::{get_docker_version, get_linux_version, get_runc_version},
-    ExploitStatus, Step,
+    status::Status,
+    steps::version::{get_docker_version, get_linux_version, get_runc_version},
+    Step,
 };
 
 /// A serializable report on one or more exploits.
@@ -30,11 +31,11 @@ use super::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Report {
     /// Date at which the report was generated.
-    date: DateTime<chrono::Utc>,
+    pub date: DateTime<chrono::Utc>,
     /// Information about the system
-    system_info: SystemInfo,
-    /// A series of reports on exploit plan execution.
-    exploits: Vec<PlanReport>,
+    pub system_info: SystemInfo,
+    /// A series of reports on trick execution.
+    pub exploits: Vec<TrickReport>,
 }
 
 impl Default for Report {
@@ -48,7 +49,7 @@ impl Default for Report {
 }
 
 impl Report {
-    pub fn add(&mut self, exploit: PlanReport) {
+    pub fn add(&mut self, exploit: TrickReport) {
         self.exploits.push(exploit)
     }
 
@@ -74,16 +75,16 @@ impl Report {
 /// A serializable exploit report.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PlanReport {
+pub struct TrickReport {
     /// Name of the exploit.
-    name: String,
+    pub name: String,
     /// A series of reports on exploit steps.
-    steps: Vec<StepReport>,
+    pub steps: Vec<StepReport>,
     /// Final status of the exploit.
-    status: ExploitStatus,
+    pub status: Status,
 }
 
-impl PlanReport {
+impl TrickReport {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_owned(),
@@ -96,7 +97,7 @@ impl PlanReport {
         self.steps.push(step)
     }
 
-    pub fn set_status(&mut self, status: ExploitStatus) {
+    pub fn set_status(&mut self, status: Status) {
         self.status = status
     }
 }
@@ -109,11 +110,11 @@ pub struct StepReport {
     #[serde(flatten)]
     inner: Step,
     /// Status of the exploit step.
-    status: ExploitStatus,
+    status: Status,
 }
 
 impl StepReport {
-    pub fn new(step: &Step, status: ExploitStatus) -> Self {
+    pub(crate) fn new(step: &Step, status: Status) -> Self {
         Self {
             inner: step.to_owned(),
             status,
@@ -124,16 +125,16 @@ impl StepReport {
 /// Information about the system that ran the exploits.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SystemInfo {
+pub struct SystemInfo {
     /// Kernel version.
-    #[serde(with = "super::version::versioning_serde")]
-    kernel: Option<Versioning>,
+    #[serde(with = "super::steps::version::versioning_serde")]
+    pub kernel: Option<Versioning>,
     /// Docker version.
-    #[serde(with = "super::version::versioning_serde")]
-    docker: Option<Versioning>,
+    #[serde(with = "super::steps::version::versioning_serde")]
+    pub docker: Option<Versioning>,
     /// Runc version.
-    #[serde(with = "super::version::versioning_serde")]
-    runc: Option<Versioning>,
+    #[serde(with = "super::steps::version::versioning_serde")]
+    pub runc: Option<Versioning>,
 }
 
 impl Default for SystemInfo {
@@ -148,7 +149,7 @@ impl Default for SystemInfo {
 
 #[cfg(test)]
 mod tests {
-    use crate::testutils::assert_json_serialize;
+    use crate::{testutils::assert_json_serialize, tricks::steps::host::Host};
 
     use super::*;
 
@@ -157,17 +158,17 @@ mod tests {
         let report = Report {
             date: chrono::Utc::now(),
             system_info: SystemInfo::default(),
-            exploits: vec![PlanReport {
+            exploits: vec![TrickReport {
                 name: "foo".into(),
                 steps: vec![StepReport {
-                    inner: Step::Host {
+                    inner: Step::Host(Host {
                         script: vec![],
-                        failure: ExploitStatus::ExploitFailure,
-                        success: ExploitStatus::ExploitSuccess,
-                    },
-                    status: ExploitStatus::ExploitSuccess,
+                        failure: Status::ExploitFailure,
+                        success: Status::ExploitSuccess,
+                    }),
+                    status: Status::ExploitSuccess,
                 }],
-                status: ExploitStatus::ExploitSuccess,
+                status: Status::ExploitSuccess,
             }],
         };
 
