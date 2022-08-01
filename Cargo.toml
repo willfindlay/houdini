@@ -23,7 +23,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.58"
-async-trait = "0.1.56"
+async-trait = "0.1.57"
 atty = "0.2.14"
 bollard = "0.13.0"
 chrono = { version = "0.4.19", features = ["serde"] }
