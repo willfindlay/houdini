@@ -17,6 +17,7 @@ use anyhow::{Context, Result};
 use clap_derive::Parser;
 
 use crate::{
+    api,
     logging::LoggingFormat,
     tricks::{report::Report, status::Status, Trick},
 };
@@ -46,6 +47,19 @@ enum Cmd {
         #[clap(min_values = 1, required = true)]
         exploits: Vec<PathBuf>,
     },
+    /// The Houdini API.
+    Api {
+        /// The subcommand to run.
+        #[clap(subcommand)]
+        subcmd: ApiCmd,
+    },
+}
+
+/// Subcommands for Houdini API server.
+#[derive(Parser, Debug)]
+enum ApiCmd {
+    /// Run the Houdini API server.
+    Serve,
 }
 
 impl Cli {
@@ -82,6 +96,11 @@ impl Cli {
                     .write_to_disk()
                     .await
                     .context("failed to write report to disk")?;
+            }
+            Cmd::Api {
+                subcmd: ApiCmd::Serve,
+            } => {
+                api::serve().await?;
             }
         }
 
