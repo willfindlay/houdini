@@ -10,3 +10,6 @@ client = "docker"
 daemon = "dockerd"
 runtime = "containerd"
 socket = "/var/run/docker.sock"
+
+[api]
+socket = "/var/run/houdini.sock"
