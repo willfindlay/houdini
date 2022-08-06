@@ -12,12 +12,20 @@ mod middleware;
 mod uds;
 
 use anyhow::{Context as _, Result};
-use axum::{handler::Handler, response::IntoResponse, routing::get, Router};
+use axum::{
+    handler::Handler,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use hyper::StatusCode;
 use tokio::net::UnixListener;
 use tower::ServiceBuilder;
 
-use crate::CONFIG;
+use crate::{
+    tricks::{report::TrickReport, Trick},
+    CONFIG,
+};
 
 pub async fn serve() -> Result<()> {
     let _ = tokio::fs::remove_file(&CONFIG.api.socket).await;
@@ -32,7 +40,8 @@ pub async fn serve() -> Result<()> {
     // Add routes
     let app = Router::new()
         .route("/", get(ping))
-        .route("/ping", get(ping));
+        .route("/ping", get(ping))
+        .route("/trick", post(run_trick));
 
     // Add fallback handler
     let app = app.fallback(not_found.into_service());
@@ -51,6 +60,13 @@ pub async fn serve() -> Result<()> {
 
 async fn ping() -> &'static str {
     "pong"
+}
+
+async fn run_trick(
+    Json(trick): Json<Trick>,
+) -> Result<Json<TrickReport>, (StatusCode, &'static str)> {
+    // TODO: run the trick here and return the actual trick report
+    Ok(Json(TrickReport::new(&trick.name)))
 }
 
 async fn not_found() -> impl IntoResponse {
