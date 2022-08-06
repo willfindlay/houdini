@@ -12,7 +12,8 @@ mod middleware;
 mod uds;
 
 use anyhow::{Context as _, Result};
-use axum::{routing::get, Router};
+use axum::{handler::Handler, response::IntoResponse, routing::get, Router};
+use hyper::StatusCode;
 use tokio::net::UnixListener;
 use tower::ServiceBuilder;
 
@@ -33,6 +34,9 @@ pub async fn serve() -> Result<()> {
         .route("/", get(ping))
         .route("/ping", get(ping));
 
+    // Add fallback handler
+    let app = app.fallback(not_found.into_service());
+
     // Add middleware
     let app = app.route_layer(
         ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
@@ -47,6 +51,10 @@ pub async fn serve() -> Result<()> {
 
 async fn ping() -> &'static str {
     "pong"
+}
+
+async fn not_found() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "bad endpoint")
 }
 
 #[cfg(test)]
