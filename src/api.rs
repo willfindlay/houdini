@@ -13,6 +13,7 @@ mod uds;
 
 use anyhow::{Context as _, Result};
 use axum::{
+    debug_handler,
     handler::Handler,
     response::IntoResponse,
     routing::{get, post},
@@ -62,11 +63,12 @@ async fn ping() -> &'static str {
     "pong"
 }
 
+#[debug_handler]
 async fn run_trick(
     Json(trick): Json<Trick>,
 ) -> Result<Json<TrickReport>, (StatusCode, &'static str)> {
-    // TODO: run the trick here and return the actual trick report
-    Ok(Json(TrickReport::new(&trick.name)))
+    let report = trick.run().await;
+    Ok(Json(report))
 }
 
 async fn not_found() -> impl IntoResponse {
