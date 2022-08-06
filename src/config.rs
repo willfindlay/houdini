@@ -29,6 +29,8 @@ pub struct Config {
     pub log: LogConfig,
     /// Configuration specific to exploit reports.
     pub reports: ReportConfig,
+    /// Configuration specific to the Houdini API.
+    pub api: HoudiniApiConfig,
 }
 
 /// Configuration specific to Docker.
@@ -66,6 +68,15 @@ pub struct ReportConfig {
     /// Path to the exploit reports dir.
     #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
     pub dir: PathBuf,
+}
+
+/// Configuration specific to Houdini's API server.
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HoudiniApiConfig {
+    /// Path to the Houdini API Unix socket.
+    #[serde(deserialize_with = "serde_helpers::expand_pathbuf")]
+    pub socket: PathBuf,
 }
 
 /// Level filter for logging.
