@@ -9,11 +9,13 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
+    ffi::OsString,
     hash::{Hash, Hasher},
 };
 
 use anyhow::{Context, Result};
 use chrono::DateTime;
+use nix::sys::utsname;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use versions::Versioning;
@@ -32,23 +34,18 @@ use super::{
 pub struct Report {
     /// Date at which the report was generated.
     pub date: DateTime<chrono::Utc>,
-    /// Information about the system
-    pub system_info: SystemInfo,
     /// A series of reports on trick execution.
     pub exploits: Vec<TrickReport>,
 }
 
-impl Default for Report {
-    fn default() -> Self {
+impl Report {
+    pub fn new() -> Self {
         Self {
             date: chrono::offset::Utc::now(),
-            system_info: Default::default(),
             exploits: Default::default(),
         }
     }
-}
 
-impl Report {
     pub fn add(&mut self, exploit: TrickReport) {
         self.exploits.push(exploit)
     }
@@ -78,6 +75,8 @@ impl Report {
 pub struct TrickReport {
     /// Name of the exploit.
     pub name: String,
+    /// Information about the system
+    pub system_info: SystemInfo,
     /// A series of reports on exploit steps.
     pub steps: Vec<StepReport>,
     /// Final status of the exploit.
@@ -90,6 +89,7 @@ impl TrickReport {
             name: name.to_owned(),
             steps: Default::default(),
             status: Default::default(),
+            system_info: Default::default(),
         }
     }
 
@@ -99,6 +99,10 @@ impl TrickReport {
 
     pub fn set_status(&mut self, status: Status) {
         self.status = status
+    }
+
+    pub fn set_system_info(&mut self) {
+        self.system_info.populate()
     }
 }
 
@@ -123,9 +127,11 @@ impl StepReport {
 }
 
 /// Information about the system that ran the exploits.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SystemInfo {
+    /// Host name.
+    pub host: String,
     /// Kernel version.
     #[serde(with = "super::steps::version::versioning_serde")]
     pub kernel: Option<Versioning>,
@@ -137,13 +143,23 @@ pub struct SystemInfo {
     pub runc: Option<Versioning>,
 }
 
-impl Default for SystemInfo {
-    fn default() -> Self {
-        Self {
-            kernel: get_linux_version().ok(),
-            docker: get_docker_version().ok(),
-            runc: get_runc_version().ok(),
-        }
+impl SystemInfo {
+    #[allow(dead_code)]
+    pub fn from_system() -> Self {
+        let mut info = Self::default();
+        info.populate();
+        info
+    }
+
+    pub fn populate(&mut self) {
+        self.host = utsname::uname()
+            .map(|name| name.nodename().to_owned())
+            .unwrap_or_else(|_| OsString::from("Unknown"))
+            .to_string_lossy()
+            .to_string();
+        self.kernel = get_linux_version().ok();
+        self.docker = get_docker_version().ok();
+        self.runc = get_runc_version().ok();
     }
 }
 
@@ -157,9 +173,9 @@ mod tests {
     fn report_serde_test() {
         let report = Report {
             date: chrono::Utc::now(),
-            system_info: SystemInfo::default(),
             exploits: vec![TrickReport {
                 name: "foo".into(),
+                system_info: SystemInfo::from_system(),
                 steps: vec![StepReport {
                     inner: Step::Host(Host {
                         script: vec![],

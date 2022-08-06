@@ -67,7 +67,7 @@ impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.subcmd {
             Cmd::Run { tricks } => {
-                let mut report = Report::default();
+                let mut report = Report::new();
 
                 for file in tricks {
                     let f = File::open(&file)
