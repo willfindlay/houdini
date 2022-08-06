@@ -18,6 +18,9 @@ mod tricks;
 pub mod config;
 pub mod docker;
 pub mod logging;
+pub mod subcommands;
+pub mod host;
+pub mod vm;
 
 pub use crate::config::CONFIG;
 pub use cli::Cli;
