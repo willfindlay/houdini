@@ -741,6 +741,7 @@ dependencies = [
  "tar",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "tracing-appender",
  "tracing-log",

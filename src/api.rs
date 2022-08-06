@@ -8,11 +8,13 @@
 
 //! The Houdini API.
 
+mod middleware;
 mod uds;
 
 use anyhow::{Context as _, Result};
-use axum::{extract::ConnectInfo, routing::get, Router};
+use axum::{routing::get, Router};
 use tokio::net::UnixListener;
+use tower::ServiceBuilder;
 
 use crate::CONFIG;
 
@@ -26,7 +28,15 @@ pub async fn serve() -> Result<()> {
 
     let uds = UnixListener::bind(&CONFIG.api.socket).context("failed to bind to Houdini socket")?;
 
-    let app = Router::new().route("/", get(ping));
+    // Add routes
+    let app = Router::new()
+        .route("/", get(ping))
+        .route("/ping", get(ping));
+
+    // Add middleware
+    let app = app.route_layer(
+        ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
+    );
 
     tracing::info!("server listening on {:?}...", &CONFIG.api.socket);
     axum::Server::builder(uds::ServerAccept { uds })
@@ -35,8 +45,7 @@ pub async fn serve() -> Result<()> {
         .context("failed to start Houdini API server")
 }
 
-async fn ping(ConnectInfo(info): ConnectInfo<uds::UdsConnectInfo>) -> &'static str {
-    tracing::info!("new connection from {:?}", info);
+async fn ping() -> &'static str {
     "pong"
 }
 
