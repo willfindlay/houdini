@@ -19,7 +19,7 @@ use clap_derive::Parser;
 use crate::{
     api,
     logging::LoggingFormat,
-    tricks::{report::Report, status::Status, Trick},
+    tricks::{report::Report, Trick},
 };
 
 /// Describes Houdini's command line interface.
@@ -43,9 +43,9 @@ pub struct Cli {
 enum Cmd {
     /// Run one or more container exploits and test whether they complete successfully.
     Run {
-        /// The exploit to run.
+        /// The exploits to run.
         #[clap(min_values = 1, required = true)]
-        exploits: Vec<PathBuf>,
+        tricks: Vec<PathBuf>,
     },
     /// The Houdini API.
     Api {
@@ -66,30 +66,18 @@ impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
     pub async fn run(self) -> Result<()> {
         match self.subcmd {
-            Cmd::Run { exploits } => {
+            Cmd::Run { tricks } => {
                 let mut report = Report::default();
 
-                for exploit in exploits {
-                    let f = File::open(&exploit).await.context(format!(
-                        "could not open exploit file {}",
-                        &exploit.display()
-                    ))?;
-                    let plan: Trick = serde_yaml::from_reader(f.into_std().await).context(
-                        format!("failed to parse exploit file {}", &exploit.display()),
-                    )?;
+                for file in tricks {
+                    let f = File::open(&file)
+                        .await
+                        .context(format!("could not open trick file {}", &file.display()))?;
 
-                    let status = plan.run(Some(&mut report)).await;
-                    match status {
-                        Status::Undecided | Status::SetupFailure | Status::ExploitFailure => {
-                            tracing::info!(status = ?status, "plan execution FAILED");
-                        }
-                        Status::ExploitSuccess => {
-                            tracing::info!(status = ?status, "plan execution SUCCEEDED");
-                        }
-                        Status::Skip => {
-                            tracing::info!(status = ?status, "plan execution SKIPPED");
-                        }
-                    }
+                    let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                        .context(format!("failed to parse trick {}", &file.display()))?;
+
+                    report.add(trick.run().await);
                 }
 
                 report

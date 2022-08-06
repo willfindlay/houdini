@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use self::{
-    report::{Report, StepReport, TrickReport},
+    report::{StepReport, TrickReport},
     status::Status,
     steps::Step,
 };
@@ -36,17 +36,13 @@ pub struct Trick {
 impl Trick {
     /// Run every step of the trick plan, returning a final status in the end.
     /// If any step returns a final status, we return that status early.
-    pub async fn run(&self, report: Option<&mut Report>) -> Status {
-        let _guard = tracing::info_span!("running exploit", exploit = ?&self.name).entered();
+    pub async fn run(&self) -> TrickReport {
+        tracing::info!(name = ?&self.name, "running trick");
 
         let mut containers: HashSet<String> = HashSet::new();
         let mut status = Status::Undecided;
 
-        let mut plan_report = if report.is_some() {
-            Some(TrickReport::new(&self.name))
-        } else {
-            None
-        };
+        let mut report = TrickReport::new(&self.name);
 
         for step in &self.steps {
             status = step.run().await;
@@ -56,21 +52,26 @@ impl Trick {
             }
 
             let step_report = StepReport::new(step, status);
-            if let Some(plan_report) = &mut plan_report {
-                plan_report.add(step_report);
-            }
+            report.add(step_report);
 
             if status.is_final() {
-                if let Some(plan_report) = &mut plan_report {
-                    plan_report.set_status(status);
-                }
                 break;
             }
         }
 
-        if let Some(report) = report {
-            report.add(plan_report.unwrap());
+        match status {
+            Status::Undecided | Status::SetupFailure | Status::ExploitFailure => {
+                tracing::info!(status = ?status, "trick execution FAILED");
+            }
+            Status::ExploitSuccess => {
+                tracing::info!(status = ?status, "trick execution SUCCEEDED");
+            }
+            Status::Skip => {
+                tracing::info!(status = ?status, "trick execution SKIPPED");
+            }
         }
+
+        report.set_status(status);
 
         // Clean up containers
         for id in &containers {
@@ -79,7 +80,7 @@ impl Trick {
             }
         }
 
-        status
+        report
     }
 }
 
@@ -126,7 +127,10 @@ pub(crate) mod status {
 
 #[cfg(test)]
 mod tests {
-    use crate::testutils::{assert_json_serialize, assert_yaml_deserialize};
+    use crate::{
+        testutils::{assert_json_serialize, assert_yaml_deserialize},
+        tricks::report::Report,
+    };
 
     use super::*;
     use tokio::fs::File;
@@ -222,8 +226,11 @@ mod tests {
             "#;
 
         let plan: Trick = assert_yaml_deserialize(yaml);
-        let status = plan.run(None).await;
-        assert!(matches!(status, Status::ExploitSuccess), "should succeed");
+        let report = plan.run().await;
+        assert!(
+            matches!(report.status, Status::ExploitSuccess),
+            "should succeed"
+        );
     }
 
     #[tokio::test]
@@ -249,7 +256,9 @@ mod tests {
                 .into_std()
                 .await;
             let plan: Trick = serde_yaml::from_reader(&file).expect("should deserialize");
-            let status = plan.run(Some(&mut report)).await;
+            let trick_report = plan.run().await;
+            let status = trick_report.status;
+            report.add(trick_report);
             assert!(
                 matches!(status, Status::ExploitSuccess | Status::Skip),
                 "exploit should succeed"
