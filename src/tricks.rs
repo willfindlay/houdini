@@ -43,6 +43,7 @@ impl Trick {
         let mut status = Status::Undecided;
 
         let mut report = TrickReport::new(&self.name);
+        report.set_system_info();
 
         for step in &self.steps {
             status = step.run().await;
@@ -242,7 +243,7 @@ mod tests {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("exploits");
 
-        let mut report = Report::default();
+        let mut report = Report::new();
 
         for entry in jwalk::WalkDir::new(d)
             .follow_links(false)
