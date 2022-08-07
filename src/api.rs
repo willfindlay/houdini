@@ -87,7 +87,7 @@ async fn not_found() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use super::*;
     use serial_test::serial;
@@ -97,8 +97,68 @@ mod tests {
     #[traced_test]
     #[serial]
     async fn test_api_server_runs_smoke() {
-        let jh = tokio::spawn(async { serve(None).await.expect("server should serve") });
+        let path = tempfile::NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .to_path_buf();
+
+        let jh =
+            tokio::spawn(async move { serve(Some(&path)).await.expect("server should serve") });
         tokio::time::sleep(Duration::from_secs(1)).await;
+
+        assert!(!jh.is_finished());
+        let _ = jh.abort();
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    #[serial]
+    async fn test_api_ping() {
+        let path = Arc::new(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .into_temp_path()
+                .to_path_buf(),
+        );
+
+        let p = path.clone();
+        let jh = tokio::spawn(async move { serve(Some(&p)).await.expect("server should serve") });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");
+        client.ping().await.expect("ping should succeed");
+
+        assert!(!jh.is_finished());
+        let _ = jh.abort();
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    #[serial]
+    async fn test_api_trick() {
+        let path = Arc::new(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .into_temp_path()
+                .to_path_buf(),
+        );
+
+        let p = path.clone();
+        let jh = tokio::spawn(async move { serve(Some(&p)).await.expect("server should serve") });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");
+
+        let yaml = r#"
+            name: foo
+            steps: []
+            "#;
+        let trick = serde_yaml::from_str(yaml).expect("trick should deserialize");
+
+        let report = client.trick(&trick).await.expect("trick should succeed");
+        assert_eq!(report.name, "foo");
+        assert_eq!(report.steps.len(), 0);
+
         assert!(!jh.is_finished());
         let _ = jh.abort();
     }
