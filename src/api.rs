@@ -8,8 +8,12 @@
 
 //! The Houdini API.
 
+pub mod client;
+
 mod middleware;
 mod uds;
+
+use std::path::Path;
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -28,15 +32,21 @@ use crate::{
     CONFIG,
 };
 
-pub async fn serve() -> Result<()> {
-    let _ = tokio::fs::remove_file(&CONFIG.api.socket).await;
+pub async fn serve(socket: Option<&Path>) -> Result<()> {
+    let socket = if let Some(socket) = socket {
+        socket
+    } else {
+        &CONFIG.api.socket
+    };
+
+    let _ = tokio::fs::remove_file(socket).await;
     if let Some(parent) = &CONFIG.api.socket.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .context("failed to create parent directory for Houdini socket")?
     }
 
-    let uds = UnixListener::bind(&CONFIG.api.socket).context("failed to bind to Houdini socket")?;
+    let uds = UnixListener::bind(socket).context("failed to bind to Houdini socket")?;
 
     // Add routes
     let app = Router::new()
@@ -52,7 +62,7 @@ pub async fn serve() -> Result<()> {
         ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
     );
 
-    tracing::info!("server listening on {:?}...", &CONFIG.api.socket);
+    tracing::info!("server listening on {:?}...", socket);
     axum::Server::builder(uds::ServerAccept { uds })
         .serve(app.into_make_service_with_connect_info::<uds::UdsConnectInfo>())
         .await
@@ -87,7 +97,7 @@ mod tests {
     #[traced_test]
     #[serial]
     async fn test_api_server_runs_smoke() {
-        let jh = tokio::spawn(async { serve().await.expect("server should serve") });
+        let jh = tokio::spawn(async { serve(None).await.expect("server should serve") });
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert!(!jh.is_finished());
         let _ = jh.abort();

@@ -742,6 +742,7 @@ dependencies = [
  "human-panic",
  "humantime-serde",
  "hyper",
+ "hyperlocal",
  "jwalk",
  "lazy_static",
  "log-panics",
