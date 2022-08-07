@@ -52,6 +52,9 @@ enum Cmd {
         /// The subcommand to run.
         #[clap(subcommand)]
         subcmd: ApiCmd,
+        /// The path to the Houdini socket. Defaults to the value in Houdini configs.
+        #[clap(global = true, long, short)]
+        socket: Option<PathBuf>,
     },
 }
 
@@ -60,6 +63,24 @@ enum Cmd {
 enum ApiCmd {
     /// Run the Houdini API server.
     Serve,
+    /// Interact with the Houdini API server.
+    Client {
+        /// The operation to perform.
+        #[clap(subcommand)]
+        operation: ClientOperation,
+    },
+}
+
+/// Operations for Houdini client.
+#[derive(Parser, Debug)]
+enum ClientOperation {
+    /// Ping the Houdini API server.
+    Ping,
+    /// Run a trick on the server and get back the result.
+    Trick {
+        /// The exploit to run.
+        trick: PathBuf,
+    },
 }
 
 impl Cli {
@@ -87,8 +108,33 @@ impl Cli {
             }
             Cmd::Api {
                 subcmd: ApiCmd::Serve,
+                socket,
             } => {
-                api::serve().await?;
+                api::serve(socket.as_deref()).await?;
+            }
+            Cmd::Api {
+                subcmd: ApiCmd::Client { operation },
+                socket,
+            } => {
+                let client = api::client::HoudiniClient::new(socket.as_deref())
+                    .context("failed to parse API socket URL")?;
+
+                match operation {
+                    ClientOperation::Ping => client.ping().await?,
+                    ClientOperation::Trick { trick } => {
+                        let f = File::open(&trick)
+                            .await
+                            .context(format!("could not open trick file {}", &trick.display()))?;
+
+                        let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                            .context(format!("failed to parse trick {}", &trick.display()))?;
+
+                        let report = client.trick(&trick).await?;
+                        let out = serde_json::to_string_pretty(&report)?;
+
+                        println!("{}", out);
+                    }
+                }
             }
         }
 
