@@ -27,7 +27,7 @@ async-trait = "0.1.57"
 atty = "0.2.14"
 axum = { version = "0.5.13", features = ["macros"] }
 bollard = "0.13.0"
-chrono = { version = "0.4.19", features = ["serde"] }
+chrono = { version = "0.4.20", features = ["serde"] }
 clap = "3.2.16"
 clap_derive = "3.2.15"
 config = { version = "0.13.1", features = ["toml"] }
