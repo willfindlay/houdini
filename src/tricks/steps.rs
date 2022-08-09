@@ -21,8 +21,10 @@ use self::{
     host::Host,
     version::VersionCheck,
     wait::Wait,
+    environment::CreateEnvironment,
 };
 
+pub(crate) mod environment;
 pub(crate) mod command;
 pub(crate) mod container;
 pub(crate) mod host;
@@ -33,6 +35,7 @@ pub(crate) mod wait;
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum Step {
+    createEnvironment(CreateEnvironment),
     VersionCheck(Box<VersionCheck>),
     SpawnContainer(SpawnContainer),
     KillContainer(KillContainer),
@@ -44,6 +47,7 @@ pub(crate) enum Step {
 impl Step {
     pub async fn run(&self) -> Status {
         match self {
+            Step::createEnvironment(step) => step.run(),
             Step::VersionCheck(step) => step.run(),
             Step::SpawnContainer(step) => step.run(),
             Step::KillContainer(step) => step.run(),

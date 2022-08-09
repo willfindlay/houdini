@@ -15,6 +15,7 @@ use tokio::fs::File;
 
 use anyhow::{Context, Result};
 use clap_derive::Parser;
+use clap_derive::ArgEnum;
 
 use crate::{
     api,
@@ -55,6 +56,15 @@ enum Cmd {
         /// The path to the Houdini socket. Defaults to the value in Houdini configs.
         #[clap(global = true, long, short)]
         socket: Option<PathBuf>,
+
+        #[clap(global = true, arg_enum, long, short, default_value = "vsock")]
+        method: SocketType,
+
+        #[clap(global = true, long, short, default_value = "3")]
+        cid: u32,
+
+        #[clap(global = true, long, short, default_value = "2375")]
+        port: u32,
     },
 }
 
@@ -83,6 +93,13 @@ enum ClientOperation {
     },
 }
 
+/// Operations for Houdini client.
+#[derive(Parser, Debug, ArgEnum, Clone, Copy)]
+enum SocketType {
+    Vsock,
+    Unix,
+}
+
 impl Cli {
     /// Consume the CLI object and run the corresponding subcommand.
     pub async fn run(self) -> Result<()> {
@@ -108,32 +125,48 @@ impl Cli {
             }
             Cmd::Api {
                 subcmd: ApiCmd::Serve,
+                method,
+                cid,
+                port,
                 socket,
             } => {
-                api::serve(socket.as_deref()).await?;
+                match method {
+                    SocketType::Vsock => {api::vsock_server(cid,port).await?;},
+                    SocketType::Unix =>{api::serve(socket.as_deref()).await?;}
+                }
+                
             }
             Cmd::Api {
                 subcmd: ApiCmd::Client { operation },
+                method,
+                cid,
+                port,
                 socket,
             } => {
-                let client = api::client::HoudiniClient::new(socket.as_deref())
-                    .context("failed to parse API socket URL")?;
-
-                match operation {
-                    ClientOperation::Ping => client.ping().await?,
-                    ClientOperation::Trick { trick } => {
-                        let f = File::open(&trick)
-                            .await
-                            .context(format!("could not open trick file {}", &trick.display()))?;
-
-                        let trick: Trick = serde_yaml::from_reader(f.into_std().await)
-                            .context(format!("failed to parse trick {}", &trick.display()))?;
-
-                        let report = client.trick(&trick).await?;
-                        let out = serde_json::to_string_pretty(&report)?;
-
-                        println!("{}", out);
+                
+                match method {
+                    SocketType::Vsock => {api::vsock_client(cid, port).await?;},
+                    SocketType::Unix  => {
+                        let client = api::client::HoudiniClient::new(socket.as_deref())
+                        .context("failed to parse API socket URL")?;
+                        match operation {
+                            ClientOperation::Ping => client.ping().await?,
+                            ClientOperation::Trick { trick } => {
+                                let f = File::open(&trick)
+                                    .await
+                                    .context(format!("could not open trick file {}", &trick.display()))?;
+        
+                                let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                                    .context(format!("failed to parse trick {}", &trick.display()))?;
+        
+                                let report = client.trick(&trick).await?;
+                                let out = serde_json::to_string_pretty(&report)?;
+        
+                                println!("{}", out);
+                            }
+                        }
                     }
+
                 }
             }
         }

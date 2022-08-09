@@ -15,8 +15,10 @@ pub mod report;
 mod steps;
 
 use std::collections::HashSet;
-
+use std::process::Command;
+use std::process::Stdio;
 use serde::{Deserialize, Serialize};
+use anyhow::{bail, Context as _, Result};
 
 use self::{
     report::{StepReport, TrickReport},
@@ -32,6 +34,55 @@ pub struct Trick {
     pub name: String,
     steps: Vec<Step>,
 }
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageOption {
+    pkg: String,
+	version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnvironmentOptions {
+    kernelTag: String,
+	kconfig: String,
+    buildrootConfig: String,
+	//kconfigOverride: HashMap<String,String>,
+	//install: Vec<PackageOption>,
+}
+
+impl EnvironmentOptions {
+	pub async fn spawn(&self) -> Result<()> {
+        // TODO: don't hardcode these. This is just for initial PoC testing.
+        let test_cmd = String::from("echo");
+        let mut test_args = Vec::new();
+        test_args.push(String::from("hello"));
+        run_environment_command(test_cmd, test_args);
+        println!("{}",self.kernelTag);
+        println!("{}",self.kconfig);
+        println!("{}",self.buildrootConfig);
+
+	   // Spawn the testing environment if applicable
+       
+       // Spawn houdini in testing environment
+       // Connect to houdini in testing environment
+       // houdini in testing environment then runs the test
+       // extract results from houdini in test environment
+       Ok(())
+	}
+}
+
+fn run_environment_command(cmd: String, args: Vec<String>){
+    let out = Command::new(&cmd)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .args(&args)
+                .output()
+                .map_err(anyhow::Error::from)
+                .context("failed to run command");
+}
+
+
 
 impl Trick {
     /// Run every step of the trick plan, returning a final status in the end.

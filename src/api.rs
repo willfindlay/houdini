@@ -14,6 +14,7 @@ mod middleware;
 mod uds;
 
 use std::path::Path;
+use std::str;
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -31,6 +32,11 @@ use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
 };
+
+use tokio_vsock::VsockListener;
+use tokio_vsock::VsockStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures::StreamExt as _;
 
 pub async fn serve(socket: Option<&Path>) -> Result<()> {
     let socket = if let Some(socket) = socket {
@@ -67,6 +73,92 @@ pub async fn serve(socket: Option<&Path>) -> Result<()> {
         .serve(app.into_make_service_with_connect_info::<uds::UdsConnectInfo>())
         .await
         .context("failed to start Houdini API server")
+}
+
+//https://github.com/rust-vsock/tokio-vsock/blob/master/tests/vsock.rs
+pub async fn vsock_client(cid: u32, port: u32) -> Result<()> {
+    let string = String::from("hello");
+    //let mut rng = rand::thread_rng();
+    //let mut blob: Vec<u8> = vec![];
+    let mut blob: &[u8]= string.as_bytes();
+    let test_blob_size: usize = blob.len();
+    let test_block_size: usize = blob.len();
+    let mut rx_blob = vec![];
+    let mut tx_pos = 0;
+
+    rx_blob.resize(test_blob_size, 0);
+    //rng.fill_bytes(&mut blob);
+
+    let mut stream = VsockStream::connect(cid, port)
+        .await
+        .expect("connection failed");
+
+    while tx_pos < test_blob_size {
+        let written_bytes = stream
+            .write(&blob[tx_pos..tx_pos + test_block_size])
+            .await
+            .expect("write failed");
+        if written_bytes == 0 {
+            panic!("stream unexpectedly closed");
+        }
+
+        let mut rx_pos = tx_pos;
+        while rx_pos < (tx_pos + written_bytes) {
+            let read_bytes = stream
+                .read(&mut rx_blob[rx_pos..])
+                .await
+                .expect("read failed");
+            if read_bytes == 0 {
+                panic!("stream unexpectedly closed");
+            }
+            rx_pos += read_bytes;
+            let s = match str::from_utf8(&rx_blob) {
+                Ok(v) => v,
+                Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+            };
+            println!("Recieved: {:?}", rx_blob);
+            println!("Recieved: {:?}", s);
+        }
+
+        tx_pos += written_bytes;
+    }
+    Ok(())
+}
+
+//https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
+pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
+
+    let listener = VsockListener::bind(libc::VMADDR_CID_ANY, port)
+        .expect("unable to bind virtio listener");
+        println!("Listening for connections on port: {}", port);
+    let mut incoming = listener.incoming();
+    while let Some(result) = incoming.next().await {
+        match result {
+            Ok(mut stream) => {
+                println!("Got connection ============");
+                tokio::spawn(async move {
+                    loop {
+                        let mut buf = vec![0u8; 5000];
+                        let len = stream.read(&mut buf).await.unwrap();
+
+                        if len == 0 {
+                            break;
+                        }
+
+                        buf.resize(len, 0);
+                        println!("Got data: {:?}", &buf);
+                        stream.write_all(&buf).await.unwrap();
+                    }
+                });
+            }
+            Err(e) => {
+                println!("Got error: {:?}", e);
+            }
+        }
+    }
+
+    
+    Ok(())
 }
 
 async fn ping() -> &'static str {
