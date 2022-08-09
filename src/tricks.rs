@@ -15,8 +15,10 @@ pub mod report;
 mod steps;
 
 use std::collections::HashSet;
-
+use std::process::Command;
+use std::process::Stdio;
 use serde::{Deserialize, Serialize};
+use anyhow::{Context as _, Result};
 
 use self::{
     report::{StepReport, TrickReport},
@@ -24,6 +26,7 @@ use self::{
     steps::Step,
 };
 use crate::docker::reap_container;
+use crate::api;
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,10 +36,26 @@ pub struct Trick {
     steps: Vec<Step>,
 }
 
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageOption {
+    pkg: String,
+	version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnvironmentOptions {
+    kernel_tag: String,
+	kconfig: String,
+    buildroot_config: String,
+	//kconfigOverride: HashMap<String,String>,
+	//install: Vec<PackageOption>,
+}
+
 impl Trick {
     /// Run every step of the trick plan, returning a final status in the end.
     /// If any step returns a final status, we return that status early.
-    pub async fn run(&self) -> TrickReport {
+    pub async fn run(&self, is_vm: bool) -> TrickReport {
         tracing::info!(name = ?&self.name, "running trick");
 
         let mut containers: HashSet<String> = HashSet::new();
@@ -45,18 +64,55 @@ impl Trick {
         let mut report = TrickReport::new(&self.name);
         report.set_system_info();
 
+        let mut create_vm = 0;
+
         for step in &self.steps {
-            status = step.run().await;
+            if create_vm == 0 {
+                if let steps::Step::createEnvironment( step ) = step {
+                    //run create environment
+                    //rest of steps get sent to VM
+                    if !is_vm {
+                        create_vm = 1;
+                    }
+                    else {
+                        continue;
+                    }
+                }
 
-            if let Step::SpawnContainer(step) = step {
-                containers.insert(step.name.to_owned());
+                if create_vm == 1 {
+                    status = step.run().await;
+                    let mut client = api::client::HoudiniVsockClient::new(3, 2375).await.unwrap();
+                    let step_report = StepReport::new(step, status);
+                    report.add(step_report);
+
+                    let step_report = client.trick(serde_json::to_vec(self).unwrap()).await.unwrap();
+
+                    for step in step_report.steps {
+                        report.add(step);
+                    }
+
+                    report.set_status(step_report.status);
+
+                    
+
+                    break;
+                }
+
+                status = step.run().await;
+
+                if let Step::SpawnContainer(step) = step {
+                    containers.insert(step.name.to_owned());
+                }
+
+                let step_report = StepReport::new(step, status);
+                report.add(step_report);
+
+                if status.is_final() {
+                    break;
+                }
             }
-
-            let step_report = StepReport::new(step, status);
-            report.add(step_report);
-
-            if status.is_final() {
-                break;
+            else {
+                
             }
         }
 
@@ -227,7 +283,7 @@ mod tests {
             "#;
 
         let plan: Trick = assert_yaml_deserialize(yaml);
-        let report = plan.run().await;
+        let report = plan.run(false).await;
         assert!(
             matches!(report.status, Status::ExploitSuccess),
             "should succeed"
@@ -257,7 +313,7 @@ mod tests {
                 .into_std()
                 .await;
             let plan: Trick = serde_yaml::from_reader(&file).expect("should deserialize");
-            let trick_report = plan.run().await;
+            let trick_report = plan.run(false).await;
             let status = trick_report.status;
             report.add(trick_report);
             assert!(
