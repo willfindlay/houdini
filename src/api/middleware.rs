@@ -9,6 +9,7 @@
 //! Middleware for the Houdini API.
 
 use crate::api::uds::UdsConnectInfo;
+use crate::api::vsock::VsockConnectInfo;
 use axum::{
     extract::{ConnectInfo, RequestParts},
     http::Request,

@@ -13,6 +13,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use hyper::{Body, Request};
 use hyperlocal::{UnixClientExt, UnixConnector, Uri};
+use tokio_vsock::VsockStream;
+
+use tokio_vsock::VsockListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures::StreamExt as _;
+use std::str;
 
 use crate::{
     tricks::{report::TrickReport, Trick},
@@ -24,7 +30,14 @@ pub struct HoudiniClient<'a> {
     socket: &'a Path,
 }
 
+pub struct HoudiniVsockClient{
+    client: VsockStream,
+    cid: u32,
+    port: u32,
+}
+
 impl<'a> HoudiniClient<'a> {
+
     pub fn new(socket: Option<&'a Path>) -> Result<Self> {
         let socket = if let Some(socket) = socket {
             socket
@@ -79,4 +92,135 @@ impl<'a> HoudiniClient<'a> {
         let body = hyper::body::to_bytes(res.into_body()).await?.to_vec();
         serde_json::from_slice(body.as_slice()).context("failed to deserialize response")
     }
+}
+
+impl HoudiniVsockClient{
+
+    pub async fn new(cid: u32, port: u32) -> Result<HoudiniVsockClient> {
+
+        let client = VsockStream::connect(cid, port)
+        .await
+        .expect("connection failed");
+
+        println!("CLIENT CONNECTION CID: {} PORT: {}",cid,port);
+
+        Ok(Self { cid, port, client})
+    }
+
+    pub async fn ping(&self) -> Result<()> {
+
+        //let mut rx_blob = vec![];
+        
+        let req = Request::builder()
+            .header("content-type", "application/json")
+            .method("GET")
+            .uri(self.uri("/ping"))
+            .body(Body::default()).unwrap();
+
+        println!("PINGING CID: {} PORT: {}",self.cid, self.port);
+        println!("REQUEST {:?}",req);
+
+        let payload = format!("{:?}",req);
+
+        /*let payload = String::from("ping");
+        let mut response = String::from("");
+
+        let mut return_bytes = 0;
+        let mut sent_bytes = 0;
+
+        let mut stream = VsockStream::connect(self.cid, self.port)
+        .await
+        .expect("connection failed");
+
+        while sent_bytes == 0{
+            let sent = stream
+                .write(payload.as_bytes())
+                .await
+                .context("ping failed")?;
+            sent_bytes += sent;
+            println!("SENT: {} -- SENT_BYTES: {}",sent,sent_bytes);
+            println!("SENT AND NOW WAITING FOR RESPONSE");
+            while return_bytes == 0{
+                println!("WAITING FOR RESPONSE");
+                
+                let res = stream
+                    .read_to_string(&mut response)
+                    .await
+                    .expect("read failed");
+                return_bytes += res;
+                println!("READ: {} -- READ_BYTES: {}",res,return_bytes);
+                println!("{:?}",response);
+            }
+        }
+
+        if return_bytes == 0 {
+            tracing::info!("Stream closed");
+            Ok(())
+        } else {
+            tracing::info!("server responsed to ping, all is well");
+            Ok(())
+        }*/
+
+        //let mut rng = rand::thread_rng();
+        //let mut blob: Vec<u8> = vec![];
+        let mut blob: &[u8]= payload.as_bytes();
+        let test_blob_size: usize = blob.len();
+        let test_block_size: usize = blob.len();
+        let mut rx_blob = vec![];
+        let mut tx_pos = 0;
+
+        rx_blob.resize(test_blob_size, 0);
+        //rng.fill_bytes(&mut blob);
+
+        let mut stream = VsockStream::connect(self.cid, self.port)
+            .await
+            .expect("connection failed");
+        
+        //need to have logic to create http responses/requests
+
+        while tx_pos < test_blob_size {
+            let written_bytes = stream
+                .write(&blob)
+                .await
+                .expect("write failed");
+            if written_bytes == 0 {
+                panic!("stream unexpectedly closed");
+            }
+
+            let mut rx_pos = tx_pos;
+            while rx_pos < (tx_pos + written_bytes) {
+                let read_bytes = stream.read(&mut rx_blob).await.unwrap();
+
+                if read_bytes == 0 {
+                    panic!("stream unexpectedly closed");
+                }
+                rx_pos += read_bytes;
+                let s = match str::from_utf8(&rx_blob) {
+                    Ok(v) => v,
+                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+                };
+
+                println!("Recieved: {} bytes", read_bytes);
+                println!("Recieved: {:?}", rx_blob);
+                println!("Recieved: {:?}", s);
+
+                //logic goes here
+                //parse received data which should be http
+                
+            }
+
+            tx_pos += written_bytes;
+        }
+        Ok(())
+    }
+
+    fn uri<S: AsRef<str>>(&self, endpoint: S) -> hyper::Uri {
+        let mut authority = String::default();
+        authority.push_str(&self.cid.to_string());
+        authority.push_str(":");
+        authority.push_str(&self.port.to_string());
+
+        hyper::Uri::builder().scheme("vsock").authority(authority).path_and_query(endpoint.as_ref()).build().unwrap()
+    }
+
 }

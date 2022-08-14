@@ -145,7 +145,14 @@ impl Cli {
             } => {
                 
                 match method {
-                    SocketType::Vsock => {api::vsock_client(cid, port).await?;},
+                    SocketType::Vsock => {
+                        
+                        let client = api::client::HoudiniVsockClient::new(cid, port).await?;
+                        match operation {
+                            ClientOperation::Ping => client.ping().await?,
+                            ClientOperation::Trick { trick } => {},
+                        }
+                    }
                     SocketType::Unix  => {
                         let client = api::client::HoudiniClient::new(socket.as_deref())
                         .context("failed to parse API socket URL")?;

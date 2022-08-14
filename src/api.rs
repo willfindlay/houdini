@@ -12,6 +12,7 @@ pub mod client;
 
 mod middleware;
 mod uds;
+mod vsock;
 
 use std::path::Path;
 use std::str;
@@ -128,7 +129,7 @@ pub async fn vsock_client(cid: u32, port: u32) -> Result<()> {
 //https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
 pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
 
-    let listener = VsockListener::bind(libc::VMADDR_CID_ANY, port)
+    let listener = VsockListener::bind(cid, port)
         .expect("unable to bind virtio listener");
         println!("Listening for connections on port: {}", port);
     let mut incoming = listener.incoming();
@@ -140,25 +141,61 @@ pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
                     loop {
                         let mut buf = vec![0u8; 5000];
                         let len = stream.read(&mut buf).await.unwrap();
-
                         if len == 0 {
                             break;
                         }
 
-                        buf.resize(len, 0);
                         println!("Got data: {:?}", &buf);
+                        buf.resize(len+1, 0);
+                        println!("Responding with: {:?}", &buf);
+                        println!("Responding to: {:?}", stream.peer_addr());
                         stream.write_all(&buf).await.unwrap();
+                        println!("Finished Writing");
+
+                        //logic goes here
+                        //parse request/response and send appropriate request/response
+
                     }
+                    println!("Out of loop");
                 });
+                println!("done here");
             }
             Err(e) => {
                 println!("Got error: {:?}", e);
+                break;
             }
         }
+        println!("done there");
     }
-
-    
     Ok(())
+
+
+    /*let virtio_sock = VsockListener::bind(cid, port)
+    .expect("unable to bind virtio listener");
+
+    println!("Listening for connections on cid: {}", cid);
+    println!("Listening for connections on port: {}", port);
+
+    // Add routes
+    let app = Router::new()
+        .route("/", get(ping))
+        .route("/ping", get(ping))
+        .route("/trick", post(run_trick));
+
+    // Add fallback handler
+    let app = app.fallback(not_found.into_service());
+
+    // Add middleware
+    let app = app.route_layer(
+        ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
+    );
+    
+
+    tracing::info!("server listening on {:?}...", virtio_sock);
+    axum::Server::builder(vsock::ServerAccept { virtio_sock })
+        .serve(app.into_make_service_with_connect_info::<vsock::VsockConnectInfo>())
+        .await
+        .context("failed to start Houdini API server")*/
 }
 
 async fn ping() -> &'static str {
