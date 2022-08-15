@@ -22,7 +22,7 @@ name = "houdini"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = "1.0.60"
+anyhow = "1.0.61"
 async-trait = "0.1.57"
 atty = "0.2.14"
 axum = { version = "0.5.13", features = ["macros"] }
