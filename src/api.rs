@@ -16,6 +16,7 @@ mod vsock;
 
 use std::path::Path;
 use std::str;
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -33,6 +34,12 @@ use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
 };
+
+use httparse;
+use serde_json::json;
+
+use serde::Deserialize;
+use serde::Serialize;
 
 use tokio_vsock::VsockListener;
 use tokio_vsock::VsockStream;
@@ -126,12 +133,37 @@ pub async fn vsock_client(cid: u32, port: u32) -> Result<()> {
     Ok(())
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TrickRequest {
+    request_type: String,
+    method: String,
+    uri: String,
+    body: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TrickResponse {
+    request_type: String,
+    method: String,
+    uri: String,
+    body: Trick,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TrickFinalResponse {
+    request_type: String,
+    method: String,
+    uri: String,
+    body: TrickReport,
+}
+
 //https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
 pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
 
     let listener = VsockListener::bind(cid, port)
         .expect("unable to bind virtio listener");
         println!("Listening for connections on port: {}", port);
+
     let mut incoming = listener.incoming();
     while let Some(result) = incoming.next().await {
         match result {
@@ -144,16 +176,29 @@ pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
                         if len == 0 {
                             break;
                         }
+                        buf.resize(len, 0);
+
+                        //logic goes here
+                        //parse request/response and send appropriate request/response
+                        //if ping, do ping function
+                        //if trick, do trick function
+                        
+                        let v: TrickRequest = serde_json::from_slice(&buf).unwrap();
+                        println!("{:#?}",v);
+                        println!("REQUEST_TYPE: {:?}", v.request_type);
+                        println!("METHOD: {:?}", v.method);
+                        println!("URI: {:?}", v.uri);
+                        println!("BODY: {:?}", v.body);
 
                         println!("Got data: {:?}", &buf);
-                        buf.resize(len+1, 0);
+                        
                         println!("Responding with: {:?}", &buf);
                         println!("Responding to: {:?}", stream.peer_addr());
                         stream.write_all(&buf).await.unwrap();
                         println!("Finished Writing");
 
-                        //logic goes here
-                        //parse request/response and send appropriate request/response
+                        
+
 
                     }
                     println!("Out of loop");
@@ -196,6 +241,106 @@ pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
         .serve(app.into_make_service_with_connect_info::<vsock::VsockConnectInfo>())
         .await
         .context("failed to start Houdini API server")*/
+}
+
+pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<()> {
+
+    let thing: Arc<[u8]> = trick.into();
+    let listener = VsockListener::bind(cid, port)
+        .expect("unable to bind virtio listener");
+        println!("Listening for connections on port: {}", port);
+
+    
+    println!("TRICK 1: {:?}", thing);
+    //let steps: Trick = serde_json::from_slice(&trick).unwrap();
+    //println!("TRICK 2: {:?}", steps);
+    let req = b"
+    {
+        \"request_type\": \"Request\",
+        \"method\": \"GET\",
+        \"uri\": \"\\\\trick\",
+        \"body\": ";
+    let mut r = req.to_vec();
+    let b: Vec<u8> = thing.iter().cloned().collect();
+    r.extend(&b);
+    r.push(10);
+    r.push(125);
+
+    println!("TRICK 3: {:?}", r);
+    let mut t: TrickResponse = serde_json::from_slice(&r).unwrap();
+
+    println!("TRICK 4: {:?}", b);
+    t.body = serde_json::from_slice(&b).unwrap();
+    println!("TRICK 5: {:?}", t.body);
+    println!("{:#?}",t);
+    println!("REQUEST_TYPE: {:?}", t.request_type);
+    println!("METHOD: {:?}", t.method);
+    println!("URI: {:?}", t.uri);
+    println!("BODY: {:?}", t.body);
+
+    
+
+    let mut incoming = listener.incoming();
+    while let Some(result) = incoming.next().await {
+        match result {
+            Ok(mut stream) => {
+                println!("Got connection ============");
+                let mut payload = serde_json::to_vec(&t).unwrap();
+                tokio::spawn(async move {
+                    loop {
+                        let mut buf = vec![0u8; 5000];
+                        println!("WAITING TO READ");
+                        let len = stream.read(&mut buf).await.unwrap();
+                        println!("READ SOMETHING");
+                        if len == 0 {
+                            println!("READ NOTHING");
+                            break;
+                        }
+                        buf.resize(len, 0);
+
+
+                        //logic goes here
+                        //parse request/response and send appropriate request/response
+                        //if recieved the start request,
+                        //  send trick
+                        
+                        let v: TrickRequest = serde_json::from_slice(&buf).unwrap();
+                        println!("{:#?}",v);
+                        println!("REQUEST_TYPE: {:?}", v.request_type);
+                        println!("METHOD: {:?}", v.method);
+                        println!("URI: {:?}", v.uri);
+                        println!("BODY: {:?}", v.body);
+
+                        println!("Got data: {:?}", &buf);
+                        
+                        println!("Responding with: {:?}", &payload);
+                        println!("Responding to: {:?}", stream.peer_addr());
+                        stream.write_all(&payload).await.unwrap();
+                        println!("Finished Writing");
+
+                        let mut buf = vec![0u8; 5000];
+                        let len = stream.read(&mut buf).await.unwrap();
+                        if len == 0 {
+                            break;
+                        }
+                        buf.resize(len, 0);
+                        
+                        let v: TrickFinalResponse = serde_json::from_slice(&buf).unwrap();
+
+                    }
+                    println!("Out of loop");
+                });
+                println!("done here");
+            }
+            Err(e) => {
+                println!("Got error: {:?}", e);
+                break;
+            }
+        }
+        println!("done there");
+    }
+    Ok(())
+
 }
 
 async fn ping() -> &'static str {

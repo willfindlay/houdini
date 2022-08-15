@@ -98,6 +98,7 @@ fn launch_image(){
                 .arg("user,id=mynet0,hostfwd=tcp::30022-:22,hostfwd=tcp::32375-:2375")
                 .arg("-device")
                 .arg("virtio-net-pci,netdev=mynet0")
+                .arg("&")
                 .output()
                 .map_err(anyhow::Error::from)
                 .context("failed to run command");

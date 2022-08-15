@@ -37,6 +37,7 @@ futures = "0.3.21"
 gitignore = "1.0.7"
 human-panic = "1.0.3"
 humantime-serde = "1.1.1"
+httparse = "1.7.1"
 hyper = "0.14.20"
 hyperlocal = { version = "0.8.0", features = ["client"], default-features = false }
 jwalk = "0.6.0"

@@ -20,6 +20,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use futures::StreamExt as _;
 use std::str;
 
+use crate::api::TrickResponse;
+use crate::api::TrickRequest;
+use crate::api::TrickFinalResponse;
+
+use httparse;
+
 use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
@@ -111,16 +117,25 @@ impl HoudiniVsockClient{
 
         //let mut rx_blob = vec![];
         
-        let req = Request::builder()
+        let req = b"
+        {
+            \"request_type\": \"Request\",
+            \"method\": \"GET\",
+            \"uri\": \"\\\\ping\",
+            \"body\": \"[]\"
+        }";
+
+        /*let req = Request::builder()
             .header("content-type", "application/json")
             .method("GET")
             .uri(self.uri("/ping"))
-            .body(Body::default()).unwrap();
+            .body(Body::default()).unwrap();*/
 
         println!("PINGING CID: {} PORT: {}",self.cid, self.port);
         println!("REQUEST {:?}",req);
 
-        let payload = format!("{:?}",req);
+        //let payload = format!("{:?}",req);
+        let payload = req;
 
         /*let payload = String::from("ping");
         let mut response = String::from("");
@@ -163,7 +178,8 @@ impl HoudiniVsockClient{
 
         //let mut rng = rand::thread_rng();
         //let mut blob: Vec<u8> = vec![];
-        let mut blob: &[u8]= payload.as_bytes();
+        //let mut blob: &[u8]= payload.as_bytes();
+        let mut blob: &[u8]= payload;
         let test_blob_size: usize = blob.len();
         let test_block_size: usize = blob.len();
         let mut rx_blob = vec![];
@@ -207,6 +223,8 @@ impl HoudiniVsockClient{
                 //logic goes here
                 //parse received data which should be http
                 
+
+                
             }
 
             tx_pos += written_bytes;
@@ -221,6 +239,96 @@ impl HoudiniVsockClient{
         authority.push_str(&self.port.to_string());
 
         hyper::Uri::builder().scheme("vsock").authority(authority).path_and_query(endpoint.as_ref()).build().unwrap()
+    }
+
+    pub async fn trick(&self) -> Result<()> {
+
+        let req = b"
+        {
+            \"request_type\": \"Request\",
+            \"method\": \"GET\",
+            \"uri\": \"\\\\trick\",
+            \"body\": \"START\"
+        }";
+
+        println!("PINGING CID: {} PORT: {}",self.cid, self.port);
+        println!("REQUEST {:?}",req);
+
+        //let payload = format!("{:?}",req);
+        let payload = req;
+
+        
+        let mut blob: &[u8]= payload;
+        let test_blob_size: usize = blob.len();
+        let test_block_size: usize = blob.len();
+        let mut rx_blob = vec![];
+        let mut tx_pos = 0;
+
+        rx_blob.resize(5000, 0);
+        //rng.fill_bytes(&mut blob);
+
+        let mut stream = VsockStream::connect(self.cid, self.port)
+            .await
+            .expect("connection failed");
+        
+        //need to have logic to create http responses/requests
+
+        while tx_pos < test_blob_size {
+            let written_bytes = stream
+                .write(&blob)
+                .await
+                .expect("write failed");
+            if written_bytes == 0 {
+                panic!("stream unexpectedly closed");
+            }
+
+            let mut rx_pos = 0;
+            let mut valid = 0;
+            while valid == 0 {
+                let read_bytes = stream.read(&mut rx_blob[rx_pos..]).await.unwrap();
+
+                if read_bytes == 0 {
+                    panic!("stream unexpectedly closed");
+                }
+                rx_pos += read_bytes;
+                rx_blob.resize(rx_pos, 0);
+                let s = match str::from_utf8(&rx_blob) {
+                    Ok(v) => v,
+                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+                };
+
+                println!("Recieved: {} bytes", read_bytes);
+                println!("Recieved: {:?}", rx_blob);
+                println!("Recieved: {:?}", s);
+
+                if let Ok(payload) = serde_json::from_slice(&rx_blob){
+                    let v: TrickResponse = payload;
+                    println!("{:?}", v);
+                    valid = 1;
+                    let trick: Trick = v.body;
+                    //logic goes here
+                    //parse received data which should be http
+                    let report = trick.run().await;
+                }
+                rx_blob.resize(5000, 0);
+                
+            }
+
+            tx_pos += written_bytes;
+        }
+
+        while tx_pos < test_blob_size {
+            let written_bytes = stream
+                .write(&blob)
+                .await
+                .expect("write failed");
+            if written_bytes == 0 {
+                panic!("stream unexpectedly closed");
+            }
+
+            tx_pos += written_bytes;
+        }
+        Ok(())
     }
 
 }

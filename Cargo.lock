@@ -753,6 +753,7 @@ dependencies = [
  "flate2",
  "futures",
  "gitignore",
+ "httparse",
  "human-panic",
  "humantime-serde",
  "hyper",

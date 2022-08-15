@@ -26,6 +26,7 @@ use self::{
     steps::Step,
 };
 use crate::docker::reap_container;
+use crate::api;
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,18 +97,40 @@ impl Trick {
         let mut report = TrickReport::new(&self.name);
         report.set_system_info();
 
+        let mut create_vm = 0;
+
         for step in &self.steps {
-            status = step.run().await;
+            if create_vm == 0 {
+                if let steps::Step::createEnvironment( step ) = step {
+                    //run create environment
+                    //rest of steps get sent to VM
+                    create_vm = 1;
+                }
 
-            if let Step::SpawnContainer(step) = step {
-                containers.insert(step.name.to_owned());
+                if create_vm == 1 {
+                    status = step.run().await;
+                    api::vsock_server_trick(3, 2375, serde_json::to_vec(self).unwrap());
+                    let step_report = StepReport::new(step, status);
+                    report.add(step_report);
+
+                    break;
+                }
+
+                status = step.run().await;
+
+                if let Step::SpawnContainer(step) = step {
+                    containers.insert(step.name.to_owned());
+                }
+
+                let step_report = StepReport::new(step, status);
+                report.add(step_report);
+
+                if status.is_final() {
+                    break;
+                }
             }
-
-            let step_report = StepReport::new(step, status);
-            report.add(step_report);
-
-            if status.is_final() {
-                break;
+            else {
+                
             }
         }
 
