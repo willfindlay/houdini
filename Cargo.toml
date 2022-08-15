@@ -33,7 +33,7 @@ clap_derive = "3.2.15"
 config = { version = "0.13.2", features = ["toml"] }
 directories = "4.0.1"
 flate2 = "1.0.24"
-futures = "0.3.21"
+futures = "0.3.23"
 gitignore = "1.0.7"
 human-panic = "1.0.3"
 humantime-serde = "1.1.1"
