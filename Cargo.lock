@@ -753,7 +753,6 @@ dependencies = [
  "flate2",
  "futures",
  "gitignore",
- "httparse",
  "human-panic",
  "humantime-serde",
  "hyper",
@@ -781,7 +780,6 @@ dependencies = [
  "tracing-test",
  "uuid 1.1.2",
  "versions",
- "vsock",
 ]
 
 [[package]]

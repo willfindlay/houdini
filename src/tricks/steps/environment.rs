@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::process::Stdio;
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 
-use super::{command::ShellCommand, RunStep};
+use super::RunStep;
 
 use crate::{
     tricks::status::Status,
@@ -73,35 +73,34 @@ fn create_buildroot_image(bconfig: String, kconfig: String){
 fn launch_image(){
     let test_cmd = String::from("qemu-system-x86_64");
     let out = Command::new(&test_cmd)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .arg("-M")
-                .arg("pc")
-                .arg("-m")
-                .arg("2048")
-                .arg("-nographic")
-                .arg("-smp")
-                .arg("1")
-                .arg("-kernel")
-                .arg("~/Desktop/buildroot-bpfcontain/buildroot/output/images/bzImage")
-                .arg("-initrd")
-                .arg("~/Desktop/buildroot-bpfcontain/buildroot/output/images/rootfs.cpio")
-                .arg("-append")
-                .arg("console=tty1 console=ttyS0")
-                .arg("-netdev")
-                .arg("user,id=n1")
-                .arg("-device")
-                .arg("e1000,netdev=n1")
-                .arg("-device")
-                .arg("vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3")
-                .arg("-netdev")
-                .arg("user,id=mynet0,hostfwd=tcp::30022-:22,hostfwd=tcp::32375-:2375")
-                .arg("-device")
-                .arg("virtio-net-pci,netdev=mynet0")
-                .arg("&")
-                .output()
-                .map_err(anyhow::Error::from)
-                .context("failed to run command");
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .arg("-M")
+        .arg("pc")
+        .arg("-m")
+        .arg("2048")
+        .arg("-nographic")
+        .arg("-smp")
+        .arg("1")
+        .arg("-kernel")
+        .arg("/home/kevin/Desktop/buildroot-bpfcontain/buildroot/output/images/bzImage")
+        .arg("-initrd")
+        .arg("/home/kevin/Desktop/buildroot-bpfcontain/buildroot/output/images/rootfs.cpio")
+        .arg("-append")
+        .arg("console=tty1 console=ttyS0")
+        .arg("-netdev")
+        .arg("user,id=n1")
+        .arg("-device")
+        .arg("e1000,netdev=n1")
+        .arg("-device")
+        .arg("vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3")
+        .arg("-netdev")
+        .arg("user,id=mynet0,hostfwd=tcp::30022-:22,hostfwd=tcp::32375-:2375")
+        .arg("-device")
+        .arg("virtio-net-pci,netdev=mynet0")
+        .spawn()
+        .map_err(anyhow::Error::from)
+        .context("failed to run command");
 }
 
 fn run_environment_command(cmd: String, args: Vec<String>){

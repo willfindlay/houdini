@@ -16,7 +16,9 @@ mod vsock;
 
 use std::path::Path;
 use std::str;
-use std::sync::Arc;
+
+use std::process::Command;
+use std::process::Stdio;
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -34,9 +36,6 @@ use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
 };
-
-use httparse;
-use serde_json::json;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -83,56 +82,6 @@ pub async fn serve(socket: Option<&Path>) -> Result<()> {
         .context("failed to start Houdini API server")
 }
 
-//https://github.com/rust-vsock/tokio-vsock/blob/master/tests/vsock.rs
-pub async fn vsock_client(cid: u32, port: u32) -> Result<()> {
-    let string = String::from("hello");
-    //let mut rng = rand::thread_rng();
-    //let mut blob: Vec<u8> = vec![];
-    let mut blob: &[u8]= string.as_bytes();
-    let test_blob_size: usize = blob.len();
-    let test_block_size: usize = blob.len();
-    let mut rx_blob = vec![];
-    let mut tx_pos = 0;
-
-    rx_blob.resize(test_blob_size, 0);
-    //rng.fill_bytes(&mut blob);
-
-    let mut stream = VsockStream::connect(cid, port)
-        .await
-        .expect("connection failed");
-
-    while tx_pos < test_blob_size {
-        let written_bytes = stream
-            .write(&blob[tx_pos..tx_pos + test_block_size])
-            .await
-            .expect("write failed");
-        if written_bytes == 0 {
-            panic!("stream unexpectedly closed");
-        }
-
-        let mut rx_pos = tx_pos;
-        while rx_pos < (tx_pos + written_bytes) {
-            let read_bytes = stream
-                .read(&mut rx_blob[rx_pos..])
-                .await
-                .expect("read failed");
-            if read_bytes == 0 {
-                panic!("stream unexpectedly closed");
-            }
-            rx_pos += read_bytes;
-            let s = match str::from_utf8(&rx_blob) {
-                Ok(v) => v,
-                Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-            };
-            println!("Recieved: {:?}", rx_blob);
-            println!("Recieved: {:?}", s);
-        }
-
-        tx_pos += written_bytes;
-    }
-    Ok(())
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrickRequest {
     request_type: String,
@@ -172,217 +121,66 @@ impl TrickResponse {
 }
 
 //https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
-pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
-
-    let listener = VsockListener::bind(cid, port)
-        .expect("unable to bind virtio listener");
-        println!("Listening for connections on port: {}", port);
-
-    let mut incoming = listener.incoming();
-    while let Some(result) = incoming.next().await {
-        match result {
-            Ok(mut stream) => {
-                println!("Got connection ============");
-                tokio::spawn(async move {
-                    loop {
-                        let mut buf = vec![0u8; 5000];
-                        let len = stream.read(&mut buf).await.unwrap();
-                        if len == 0 {
-                            break;
-                        }
-                        buf.resize(len, 0);
-
-                        //logic goes here
-                        //parse request/response and send appropriate request/response
-                        //if ping, do ping function
-                        //if trick, do trick function
-                        
-                        let v: TrickRequest = serde_json::from_slice(&buf).unwrap();
-                        println!("{:#?}",v);
-                        println!("REQUEST_TYPE: {:?}", v.request_type);
-                        println!("METHOD: {:?}", v.method);
-                        println!("URI: {:?}", v.uri);
-                        println!("BODY: {:?}", v.body);
-
-                        println!("Got data: {:?}", &buf);
-                        
-                        println!("Responding with: {:?}", &buf);
-                        println!("Responding to: {:?}", stream.peer_addr());
-                        stream.write_all(&buf).await.unwrap();
-                        println!("Finished Writing");
-
-                        
-
-
-                    }
-                    println!("Out of loop");
-                });
-                println!("done here");
-            }
-            Err(e) => {
-                println!("Got error: {:?}", e);
-                break;
-            }
-        }
-        println!("done there");
-    }
-    Ok(())
-
-
-    /*let virtio_sock = VsockListener::bind(cid, port)
-    .expect("unable to bind virtio listener");
-
-    println!("Listening for connections on cid: {}", cid);
-    println!("Listening for connections on port: {}", port);
-
-    // Add routes
-    let app = Router::new()
-        .route("/", get(ping))
-        .route("/ping", get(ping))
-        .route("/trick", post(run_trick));
-
-    // Add fallback handler
-    let app = app.fallback(not_found.into_service());
-
-    // Add middleware
-    let app = app.route_layer(
-        ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
-    );
-    
-
-    tracing::info!("server listening on {:?}...", virtio_sock);
-    axum::Server::builder(vsock::ServerAccept { virtio_sock })
-        .serve(app.into_make_service_with_connect_info::<vsock::VsockConnectInfo>())
-        .await
-        .context("failed to start Houdini API server")*/
-}
 
 pub async fn vsock_serve(cid: u32, port: u32) -> Result<()> {
-    /*println!("Creating server with CID: {} and PORT: {}", cid, port);
-    let test = String::from_utf8_lossy(&trick);
-    println!("TRICK 1: {:#?}", test);
-    let thing: Arc<[u8]> = trick.into();
-    println!("TRICK 1: {:?}", thing);
 
-    
-    
-    //let steps: Trick = serde_json::from_slice(&trick).unwrap();
-    //println!("TRICK 2: {:?}", steps);
-    let req = b"
-    {
-        \"request_type\": \"Request\",
-        \"method\": \"GET\",
-        \"uri\": \"\\\\trick\",
-        \"body\": ";
-    let mut r = req.to_vec();
-
-    let b: Vec<u8> = thing.iter().cloned().collect();
-    r.extend(&b);
-    r.push(10);
-    r.push(125);
-
-    println!("TRICK 3: {:?}", r);
-    let mut t: TrickResponse = serde_json::from_slice(&r).unwrap();
-
-    println!("TRICK 4: {:?}", b);
-    t.body = serde_json::from_slice(&b).unwrap();
-    println!("TRICK 5: {:?}", t.body);
-    println!("{:#?}",t);
-    println!("REQUEST_TYPE: {:?}", t.request_type);
-    println!("METHOD: {:?}", t.method);
-    println!("URI: {:?}", t.uri);
-    println!("BODY: {:?}", t.body);*/
-
-    let listener = VsockListener::bind(cid, port)
+    let mut listener = VsockListener::bind(cid, port)
         .expect("unable to bind virtio listener");
         println!("Listening for connections on port: {}", port);
 
-    let mut incoming = listener.incoming();
-    while let Some(result) = incoming.next().await {
-        match result {
-            Ok(mut stream) => {
-                println!("Got connection ============");
-                tokio::spawn(async move {
-                    loop {
-                        let mut buf = vec![0u8; 5000];
-                        println!("WAITING TO READ");
-                        let len = stream.read(&mut buf).await.unwrap();
-                        println!("READ SOMETHING");
-                        if len == 0 {
-                            println!("READ NOTHING");
-                            break;
-                        }
-                        buf.resize(len, 0);
-
-
-                        //logic goes here
-                        //parse request/response and send appropriate request/response
-                        //if recieved the start request,
-                        //  send trick
-                        
-                        let v: TrickRequest = serde_json::from_slice(&buf).unwrap();
-
-                        println!("{:#?}",v);
-                        println!("REQUEST_TYPE: {:?}", v.request_type);
-                        println!("METHOD: {:?}", v.method);
-                        println!("URI: {:?}", v.uri);
-                        println!("BODY: {:?}", v.body);
-
-                        println!("Got data: {:?}", &buf);
-                        
-                        let trick: Trick = v.body;
-
-                        let report = trick.run().await;
-
-                        let payload = TrickResponse::new(report);
-                        let payload = serde_json::to_vec(&payload).unwrap();
-
-                        //let report = serde_json::to_string(&report).unwrap();
-
-                        //let payload = create_payload(String::from("RESPONSE"), String::from("POST"), String::from("\\\\trick"), report).await.unwrap();
-                        
-
-                        println!("Responding with: {:?}", payload);
-                        println!("Responding to: {:?}", stream.peer_addr());
-
-                        stream.write_all(&payload).await.unwrap();
-
-                        println!("Finished Writing");
-
-                    }
-                    println!("Out of loop");
-                    return;
-                });
-                println!("done here");
-            }
-            Err(e) => {
-                println!("Got error: {:?}", e);
-                break;
-            }
-        }
-        println!("done there");
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        println!("Got connection ============");
+        tokio::spawn(async move {
+            process_socket(stream).await;
+            println!("done task");
+        });
+        println!("made task");
     }
+    println!("done here");
     Ok(())
 
 }
 
-/*pub async fn create_payload(request_type: String, method: String, uri: String, body: Vec<u8>) -> Result<Vec<u8>> {
-
-    if request_type == String::from("t"){
-        let g: TrickRequest;
-        g.request_type = request_type;
-
+async fn process_socket(mut stream: VsockStream){
+    let mut buf = vec![0u8; 5000];
+    println!("WAITING TO READ");
+    let len = stream.read(&mut buf).await.unwrap();
+    println!("READ SOMETHING");
+    if len == 0 {
+        println!("READ NOTHING");
     }
+    buf.resize(len, 0);
+    
+    let request: TrickRequest = serde_json::from_slice(&buf).unwrap();
 
-    let req = format!("
-    {{
-        \"request_type\": \"{}\",
-        \"method\": \"{}\",
-        \"uri\": \"{}\",
-        \"body\": \"{}\"
-    }}",request_type,method,uri, String::from_utf8_lossy(&body));
-    Ok(req.as_bytes().iter().cloned().collect())
-}*/
+    println!("RECIEVED: {:?}",request);
+    
+    let trick: Trick = request.body;
+
+    let report = trick.run(true).await;
+
+    let payload = TrickResponse::new(report);
+
+    println!("SENT: {:?}",payload);
+    
+    let payload = serde_json::to_vec(&payload).unwrap();
+
+    stream.write_all(&payload).await.unwrap();
+
+    println!("Finished Writing");
+    println!("Shutting Down");
+    poweroff();
+}
+
+fn poweroff(){
+    let test_cmd = String::from("poweroff");
+    let out = Command::new(&test_cmd)
+                .stdout(Stdio::piped())
+                .output()
+                .map_err(anyhow::Error::from)
+                .context("failed to run command");
+}
 
 async fn ping() -> &'static str {
     "pong"
@@ -392,7 +190,7 @@ async fn ping() -> &'static str {
 async fn run_trick(
     Json(trick): Json<Trick>,
 ) -> Result<Json<TrickReport>, (StatusCode, &'static str)> {
-    let report = trick.run().await;
+    let report = trick.run(false).await;
     Ok(Json(report))
 }
 

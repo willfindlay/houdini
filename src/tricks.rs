@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::process::Command;
 use std::process::Stdio;
 use serde::{Deserialize, Serialize};
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result};
 
 use self::{
     report::{StepReport, TrickReport},
@@ -45,50 +45,17 @@ pub struct PackageOption {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EnvironmentOptions {
-    kernelTag: String,
+    kernel_tag: String,
 	kconfig: String,
-    buildrootConfig: String,
+    buildroot_config: String,
 	//kconfigOverride: HashMap<String,String>,
 	//install: Vec<PackageOption>,
 }
 
-impl EnvironmentOptions {
-	pub async fn spawn(&self) -> Result<()> {
-        // TODO: don't hardcode these. This is just for initial PoC testing.
-        let test_cmd = String::from("echo");
-        let mut test_args = Vec::new();
-        test_args.push(String::from("hello"));
-        run_environment_command(test_cmd, test_args);
-        println!("{}",self.kernelTag);
-        println!("{}",self.kconfig);
-        println!("{}",self.buildrootConfig);
-
-	   // Spawn the testing environment if applicable
-       
-       // Spawn houdini in testing environment
-       // Connect to houdini in testing environment
-       // houdini in testing environment then runs the test
-       // extract results from houdini in test environment
-       Ok(())
-	}
-}
-
-fn run_environment_command(cmd: String, args: Vec<String>){
-    let out = Command::new(&cmd)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .args(&args)
-                .output()
-                .map_err(anyhow::Error::from)
-                .context("failed to run command");
-}
-
-
-
 impl Trick {
     /// Run every step of the trick plan, returning a final status in the end.
     /// If any step returns a final status, we return that status early.
-    pub async fn run(&self) -> TrickReport {
+    pub async fn run(&self, is_vm: bool) -> TrickReport {
         tracing::info!(name = ?&self.name, "running trick");
 
         let mut containers: HashSet<String> = HashSet::new();
@@ -104,12 +71,17 @@ impl Trick {
                 if let steps::Step::createEnvironment( step ) = step {
                     //run create environment
                     //rest of steps get sent to VM
-                    create_vm = 1;
+                    if !is_vm {
+                        create_vm = 1;
+                    }
+                    else {
+                        continue;
+                    }
                 }
 
                 if create_vm == 1 {
                     status = step.run().await;
-                    let client = api::client::HoudiniVsockClient::new(3, 2375).await.unwrap();
+                    let mut client = api::client::HoudiniVsockClient::new(3, 2375).await.unwrap();
                     let step_report = StepReport::new(step, status);
                     report.add(step_report);
 
@@ -311,7 +283,7 @@ mod tests {
             "#;
 
         let plan: Trick = assert_yaml_deserialize(yaml);
-        let report = plan.run().await;
+        let report = plan.run(false).await;
         assert!(
             matches!(report.status, Status::ExploitSuccess),
             "should succeed"
@@ -341,7 +313,7 @@ mod tests {
                 .into_std()
                 .await;
             let plan: Trick = serde_yaml::from_reader(&file).expect("should deserialize");
-            let trick_report = plan.run().await;
+            let trick_report = plan.run(false).await;
             let status = trick_report.status;
             report.add(trick_report);
             assert!(

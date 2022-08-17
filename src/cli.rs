@@ -115,7 +115,7 @@ impl Cli {
                     let trick: Trick = serde_yaml::from_reader(f.into_std().await)
                         .context(format!("failed to parse trick {}", &file.display()))?;
 
-                    report.add(trick.run().await);
+                    report.add(trick.run(false).await);
                 }
 
                 report
@@ -147,17 +147,24 @@ impl Cli {
                 match method {
                     SocketType::Vsock => {
                         
-                        let client = api::client::HoudiniVsockClient::new(cid, port).await?;
+                        let mut client = api::client::HoudiniVsockClient::new(cid, port).await?;
                         match operation {
                             ClientOperation::Ping => client.ping().await?,
                             ClientOperation::Trick { trick } => {
+                                let mut report = Report::new();
                                 let f = File::open(&trick)
                                     .await
                                     .context(format!("could not open trick file {}", &trick.display()))?;
         
                                 let trick: Trick = serde_yaml::from_reader(f.into_std().await)
                                     .context(format!("failed to parse trick {}", &trick.display()))?;
-                                let report = client.trick(serde_json::to_vec(&trick).unwrap()).await?;
+                                    report.add(client.trick(serde_json::to_vec(&trick).unwrap()).await.unwrap());
+
+                                report
+                                    .write_to_disk()
+                                    .await
+                                    .context("failed to write report to disk")?;
+
                                 let out = serde_json::to_string_pretty(&report)?;
         
                                 println!("{}", out);},
