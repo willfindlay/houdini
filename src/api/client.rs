@@ -9,6 +9,7 @@
 //! Client logic for interacting with Houdini's API.
 
 use std::path::Path;
+use std::{thread, time};
 
 use anyhow::{Context, Result};
 use hyper::{Body, Request};
@@ -22,7 +23,8 @@ use std::str;
 
 use crate::api::TrickResponse;
 use crate::api::TrickRequest;
-use crate::api::TrickFinalResponse;
+//use crate::api::create_payload;
+
 
 use httparse;
 
@@ -103,13 +105,20 @@ impl<'a> HoudiniClient<'a> {
 impl HoudiniVsockClient{
 
     pub async fn new(cid: u32, port: u32) -> Result<HoudiniVsockClient> {
+        let connected = 0;
+        let mut client: VsockStream;
+        
+        while connected == 0 {
+            if let Ok(client) = VsockStream::connect(cid, port)
+            .await{
+                println!("CLIENT CONNECTION CID: {} PORT: {}",cid,port);
+                return Ok(Self { cid, port, client})
+            }
+        }
 
-        let client = VsockStream::connect(cid, port)
-        .await
-        .expect("connection failed");
-
-        println!("CLIENT CONNECTION CID: {} PORT: {}",cid,port);
-
+        client = VsockStream::connect(cid, port)
+            .await
+            .expect("connection failed");
         Ok(Self { cid, port, client})
     }
 
@@ -241,7 +250,10 @@ impl HoudiniVsockClient{
         hyper::Uri::builder().scheme("vsock").authority(authority).path_and_query(endpoint.as_ref()).build().unwrap()
     }
 
-    pub async fn trick(&self) -> Result<()> {
+    pub async fn trick(&self, trick: Vec<u8>) -> Result<TrickReport> {
+
+        let trick: Trick = serde_json::from_slice(&trick).unwrap();
+        //let trick = serde_json::to_string(&trick).unwrap();
 
         let req = b"
         {
@@ -253,12 +265,20 @@ impl HoudiniVsockClient{
 
         println!("PINGING CID: {} PORT: {}",self.cid, self.port);
         println!("REQUEST {:?}",req);
+        println!("REQUEST {:?}",String::from_utf8_lossy(req));
+
+        //let req2 = create_payload(String::from("Request"), String::from("GET"), String::from("\\\\trick"), trick).await.unwrap();
+
+        let req2 = TrickRequest::new(trick);
+        let req2 = serde_json::to_vec(&req2).unwrap();
+
+        println!("REQUEST {:?}",req2);
+        println!("REQUEST {:?}",String::from_utf8_lossy(&req2));
 
         //let payload = format!("{:?}",req);
-        let payload = req;
+        let payload = req2;
 
-        
-        let mut blob: &[u8]= payload;
+        let mut blob = payload;
         let test_blob_size: usize = blob.len();
         let test_block_size: usize = blob.len();
         let mut rx_blob = vec![];
@@ -270,10 +290,41 @@ impl HoudiniVsockClient{
         let mut stream = VsockStream::connect(self.cid, self.port)
             .await
             .expect("connection failed");
+
+        println!("SENDING OVER TRICK");
+        write_to_stream(&mut stream, blob).await;
+        println!("SENT OVER TRICK");
+        let mut response: Vec<u8> = vec![];
+
+        let mut valid = 0;
+        let mut rx_pos = 0;
+        
+        while valid == 0 {
+            read_from_stream(&mut stream, &mut response, rx_pos).await;
+
+            if let Ok(payload) = serde_json::from_slice(&response){
+                println!("PAYLOAD OK");
+                let v: TrickResponse = payload;
+                println!("{:?}", v);
+                valid = 1;
+                let trick_report: TrickReport = v.body;
+                return Ok(trick_report)
+            }
+            else {
+                println!("ISSUE READING");
+            }
+            println!("STILL READING");
+
+        }
+
+
+
+        
+        
         
         //need to have logic to create http responses/requests
 
-        while tx_pos < test_blob_size {
+        /*while tx_pos < test_blob_size {
             let written_bytes = stream
                 .write(&blob)
                 .await
@@ -327,8 +378,47 @@ impl HoudiniVsockClient{
             }
 
             tx_pos += written_bytes;
-        }
-        Ok(())
-    }
+        }*/
 
+        Ok((TrickReport::new("")))
+    }
+}
+
+async fn write_to_stream(stream: &mut VsockStream, payload: Vec<u8>) -> Result<()> {
+    let mut tx_pos = 0;
+    println!("BEGINNING TRANSMISSION");
+    println!("{:?}",stream.peer_addr());
+    println!("{:?}",stream.local_addr());
+    while tx_pos < payload.len() {
+        println!("WRITING...");
+        let written_bytes = stream
+            .write(&payload)
+            .await
+            .expect("write failed");
+        println!("WROTE {} BYTES",written_bytes);
+        if written_bytes == 0 {
+            panic!("stream unexpectedly closed");
+        }
+        tx_pos += written_bytes;
+    }
+    Ok(())
+}
+
+async fn read_from_stream(stream: &mut VsockStream, payload: &mut Vec<u8>, mut rx_pos: usize) -> Result<()> {
+
+    payload.resize(5000, 0);
+
+    println!("SENT OVER TRICK");
+    let read_bytes = stream.read(&mut payload[rx_pos..]).await.unwrap();
+
+    if read_bytes == 0 {
+        panic!("stream unexpectedly closed");
+    }
+    rx_pos += read_bytes;
+    payload.resize(rx_pos, 0);
+
+    println!("Recieved: {} bytes", read_bytes);
+    println!("Recieved: {:?}", payload);
+
+    Ok(())
 }

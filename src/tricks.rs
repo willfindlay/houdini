@@ -109,9 +109,19 @@ impl Trick {
 
                 if create_vm == 1 {
                     status = step.run().await;
-                    api::vsock_server_trick(3, 2375, serde_json::to_vec(self).unwrap());
+                    let client = api::client::HoudiniVsockClient::new(3, 2375).await.unwrap();
                     let step_report = StepReport::new(step, status);
                     report.add(step_report);
+
+                    let step_report = client.trick(serde_json::to_vec(self).unwrap()).await.unwrap();
+
+                    for step in step_report.steps {
+                        report.add(step);
+                    }
+
+                    report.set_status(step_report.status);
+
+                    
 
                     break;
                 }

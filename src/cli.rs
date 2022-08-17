@@ -130,16 +130,8 @@ impl Cli {
                 port,
                 socket,
             } => {
-                let path = PathBuf::from("/home/kevin/Desktop/kevin-houdini-vsock/exploits/write-etc-passwd.yaml");
-                let f = File::open(&path)
-                        .await
-                        .context(format!("could not open trick file {}", &path.display()))?;
-
-                    let trick: Trick = serde_yaml::from_reader(f.into_std().await)
-                        .context(format!("failed to parse trick {}", &path.display()))?;
-
                 match method {
-                    SocketType::Vsock => {api::vsock_server_trick(cid,port,serde_json::to_vec(&trick).unwrap()).await?;},
+                    SocketType::Vsock => {api::vsock_serve(cid,port).await?;},
                     SocketType::Unix =>{api::serve(socket.as_deref()).await?;}
                 }
                 
@@ -158,7 +150,17 @@ impl Cli {
                         let client = api::client::HoudiniVsockClient::new(cid, port).await?;
                         match operation {
                             ClientOperation::Ping => client.ping().await?,
-                            ClientOperation::Trick { trick } => {client.trick().await?},
+                            ClientOperation::Trick { trick } => {
+                                let f = File::open(&trick)
+                                    .await
+                                    .context(format!("could not open trick file {}", &trick.display()))?;
+        
+                                let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                                    .context(format!("failed to parse trick {}", &trick.display()))?;
+                                let report = client.trick(serde_json::to_vec(&trick).unwrap()).await?;
+                                let out = serde_json::to_string_pretty(&report)?;
+        
+                                println!("{}", out);},
                         }
                     }
                     SocketType::Unix  => {

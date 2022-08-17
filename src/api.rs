@@ -137,8 +137,19 @@ pub async fn vsock_client(cid: u32, port: u32) -> Result<()> {
 pub struct TrickRequest {
     request_type: String,
     method: String,
-    uri: String,
-    body: String,
+    uri : String,
+    body: Trick,
+}
+
+impl TrickRequest {
+    pub fn new(body: Trick) -> Self {
+        let request_type = String::from("REQUEST");
+        let method = String::from("GET");
+        let uri = String::from("\\\\trick");
+        let body = body;
+
+        return Self { request_type, method, uri, body};
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -146,15 +157,18 @@ pub struct TrickResponse {
     request_type: String,
     method: String,
     uri: String,
-    body: Trick,
+    body: TrickReport,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TrickFinalResponse {
-    request_type: String,
-    method: String,
-    uri: String,
-    body: TrickReport,
+impl TrickResponse {
+    pub fn new(body: TrickReport) -> Self {
+        let request_type = String::from("RESPONSE");
+        let method = String::from("POST");
+        let uri = String::from("\\\\trick");
+        let body = body;
+
+        return Self { request_type, method, uri, body};
+    }
 }
 
 //https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
@@ -243,15 +257,15 @@ pub async fn vsock_server(cid: u32, port: u32) -> Result<()> {
         .context("failed to start Houdini API server")*/
 }
 
-pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<()> {
-
+pub async fn vsock_serve(cid: u32, port: u32) -> Result<()> {
+    /*println!("Creating server with CID: {} and PORT: {}", cid, port);
+    let test = String::from_utf8_lossy(&trick);
+    println!("TRICK 1: {:#?}", test);
     let thing: Arc<[u8]> = trick.into();
-    let listener = VsockListener::bind(cid, port)
-        .expect("unable to bind virtio listener");
-        println!("Listening for connections on port: {}", port);
+    println!("TRICK 1: {:?}", thing);
 
     
-    println!("TRICK 1: {:?}", thing);
+    
     //let steps: Trick = serde_json::from_slice(&trick).unwrap();
     //println!("TRICK 2: {:?}", steps);
     let req = b"
@@ -261,6 +275,7 @@ pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<(
         \"uri\": \"\\\\trick\",
         \"body\": ";
     let mut r = req.to_vec();
+
     let b: Vec<u8> = thing.iter().cloned().collect();
     r.extend(&b);
     r.push(10);
@@ -276,16 +291,17 @@ pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<(
     println!("REQUEST_TYPE: {:?}", t.request_type);
     println!("METHOD: {:?}", t.method);
     println!("URI: {:?}", t.uri);
-    println!("BODY: {:?}", t.body);
+    println!("BODY: {:?}", t.body);*/
 
-    
+    let listener = VsockListener::bind(cid, port)
+        .expect("unable to bind virtio listener");
+        println!("Listening for connections on port: {}", port);
 
     let mut incoming = listener.incoming();
     while let Some(result) = incoming.next().await {
         match result {
             Ok(mut stream) => {
                 println!("Got connection ============");
-                let mut payload = serde_json::to_vec(&t).unwrap();
                 tokio::spawn(async move {
                     loop {
                         let mut buf = vec![0u8; 5000];
@@ -305,6 +321,7 @@ pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<(
                         //  send trick
                         
                         let v: TrickRequest = serde_json::from_slice(&buf).unwrap();
+
                         println!("{:#?}",v);
                         println!("REQUEST_TYPE: {:?}", v.request_type);
                         println!("METHOD: {:?}", v.method);
@@ -313,22 +330,28 @@ pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<(
 
                         println!("Got data: {:?}", &buf);
                         
-                        println!("Responding with: {:?}", &payload);
-                        println!("Responding to: {:?}", stream.peer_addr());
-                        stream.write_all(&payload).await.unwrap();
-                        println!("Finished Writing");
+                        let trick: Trick = v.body;
 
-                        let mut buf = vec![0u8; 5000];
-                        let len = stream.read(&mut buf).await.unwrap();
-                        if len == 0 {
-                            break;
-                        }
-                        buf.resize(len, 0);
+                        let report = trick.run().await;
+
+                        let payload = TrickResponse::new(report);
+                        let payload = serde_json::to_vec(&payload).unwrap();
+
+                        //let report = serde_json::to_string(&report).unwrap();
+
+                        //let payload = create_payload(String::from("RESPONSE"), String::from("POST"), String::from("\\\\trick"), report).await.unwrap();
                         
-                        let v: TrickFinalResponse = serde_json::from_slice(&buf).unwrap();
+
+                        println!("Responding with: {:?}", payload);
+                        println!("Responding to: {:?}", stream.peer_addr());
+
+                        stream.write_all(&payload).await.unwrap();
+
+                        println!("Finished Writing");
 
                     }
                     println!("Out of loop");
+                    return;
                 });
                 println!("done here");
             }
@@ -342,6 +365,24 @@ pub async fn vsock_server_trick(cid: u32, port: u32, trick: Vec<u8>) -> Result<(
     Ok(())
 
 }
+
+/*pub async fn create_payload(request_type: String, method: String, uri: String, body: Vec<u8>) -> Result<Vec<u8>> {
+
+    if request_type == String::from("t"){
+        let g: TrickRequest;
+        g.request_type = request_type;
+
+    }
+
+    let req = format!("
+    {{
+        \"request_type\": \"{}\",
+        \"method\": \"{}\",
+        \"uri\": \"{}\",
+        \"body\": \"{}\"
+    }}",request_type,method,uri, String::from_utf8_lossy(&body));
+    Ok(req.as_bytes().iter().cloned().collect())
+}*/
 
 async fn ping() -> &'static str {
     "pong"
