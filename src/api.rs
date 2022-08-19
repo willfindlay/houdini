@@ -14,11 +14,7 @@ mod middleware;
 mod uds;
 mod vsock;
 
-use std::path::Path;
-use std::str;
-
-use std::process::Command;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -37,29 +33,21 @@ use crate::{
     CONFIG,
 };
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use tokio_vsock::VsockListener;
-use tokio_vsock::VsockStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use futures::StreamExt as _;
 
-pub async fn serve(socket: Option<&Path>) -> Result<()> {
-    let socket = if let Some(socket) = socket {
-        socket
-    } else {
-        &CONFIG.api.socket
-    };
+pub use vsock::VsockAddr;
 
-    let _ = tokio::fs::remove_file(socket).await;
-    if let Some(parent) = &CONFIG.api.socket.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .context("failed to create parent directory for Houdini socket")?
-    }
+/// Houdini API server supported socket types.
+#[derive(Debug)]
+pub enum Socket {
+    Unix(PathBuf),
+    Vsock(VsockAddr),
+}
 
-    let uds = UnixListener::bind(socket).context("failed to bind to Houdini socket")?;
+pub async fn serve(socket: Option<Socket>) -> Result<()> {
+    if socket.is_none() {}
 
     // Add routes
     let app = Router::new()
@@ -75,18 +63,45 @@ pub async fn serve(socket: Option<&Path>) -> Result<()> {
         ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
     );
 
-    tracing::info!("server listening on {:?}...", socket);
+    match socket {
+        Some(Socket::Unix(path)) => uds_serve(path, app).await,
+        Some(Socket::Vsock(addr)) => vsock_serve(&addr, app).await,
+        None => uds_serve(&CONFIG.api.socket, app).await,
+    }
+    .context("failed to start Houdini API server")
+}
+
+async fn uds_serve<P: AsRef<Path>>(path: P, app: Router) -> Result<()> {
+    let _ = tokio::fs::remove_file(path.as_ref()).await;
+    if let Some(parent) = path.as_ref().parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .context("failed to create parent directory for Houdini socket")?
+    }
+    let uds = UnixListener::bind(path.as_ref()).context("failed to bind to Houdini socket")?;
+
+    tracing::info!("server listening on {:?}...", path.as_ref());
     axum::Server::builder(uds::ServerAccept { uds })
         .serve(app.into_make_service_with_connect_info::<uds::UdsConnectInfo>())
         .await
-        .context("failed to start Houdini API server")
+        .map_err(anyhow::Error::from)
+}
+
+async fn vsock_serve(VsockAddr { cid, port }: &VsockAddr, app: Router) -> Result<()> {
+    let virtio_sock = VsockListener::bind(*cid, *port).expect("unable to bind virtio listener");
+
+    tracing::info!("server listening on {}:{}...", cid, port);
+    axum::Server::builder(vsock::ServerAccept { virtio_sock })
+        .serve(app.into_make_service_with_connect_info::<vsock::VsockConnectInfo>())
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrickRequest {
     request_type: String,
     method: String,
-    uri : String,
+    uri: String,
     body: Trick,
 }
 
@@ -97,7 +112,12 @@ impl TrickRequest {
         let uri = String::from("\\\\trick");
         let body = body;
 
-        return Self { request_type, method, uri, body};
+        return Self {
+            request_type,
+            method,
+            uri,
+            body,
+        };
     }
 }
 
@@ -116,71 +136,23 @@ impl TrickResponse {
         let uri = String::from("\\\\trick");
         let body = body;
 
-        return Self { request_type, method, uri, body};
+        return Self {
+            request_type,
+            method,
+            uri,
+            body,
+        };
     }
 }
 
-//https://github.com/rust-vsock/tokio-vsock/blob/master/test_server/src/main.rs
-
-pub async fn vsock_serve(cid: u32, port: u32) -> Result<()> {
-
-    let mut listener = VsockListener::bind(cid, port)
-        .expect("unable to bind virtio listener");
-        println!("Listening for connections on port: {}", port);
-
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        println!("Got connection ============");
-        tokio::spawn(async move {
-            process_socket(stream).await;
-            println!("done task");
-        });
-        println!("made task");
-    }
-    println!("done here");
-    Ok(())
-
-}
-
-async fn process_socket(mut stream: VsockStream){
-    let mut buf = vec![0u8; 5000];
-    println!("WAITING TO READ");
-    let len = stream.read(&mut buf).await.unwrap();
-    println!("READ SOMETHING");
-    if len == 0 {
-        println!("READ NOTHING");
-    }
-    buf.resize(len, 0);
-    
-    let request: TrickRequest = serde_json::from_slice(&buf).unwrap();
-
-    println!("RECIEVED: {:?}",request);
-    
-    let trick: Trick = request.body;
-
-    let report = trick.run(true).await;
-
-    let payload = TrickResponse::new(report);
-
-    println!("SENT: {:?}",payload);
-    
-    let payload = serde_json::to_vec(&payload).unwrap();
-
-    stream.write_all(&payload).await.unwrap();
-
-    println!("Finished Writing");
-    println!("Shutting Down");
-    poweroff();
-}
-
-fn poweroff(){
-    let test_cmd = String::from("poweroff");
-    let out = Command::new(&test_cmd)
-                .stdout(Stdio::piped())
-                .output()
-                .map_err(anyhow::Error::from)
-                .context("failed to run command");
-}
+// fn poweroff() {
+//     let test_cmd = String::from("poweroff");
+//     let out = Command::new(&test_cmd)
+//         .stdout(Stdio::piped())
+//         .output()
+//         .map_err(anyhow::Error::from)
+//         .context("failed to run command");
+// }
 
 async fn ping() -> &'static str {
     "pong"
@@ -215,8 +187,11 @@ mod tests {
             .into_temp_path()
             .to_path_buf();
 
-        let jh =
-            tokio::spawn(async move { serve(Some(&path)).await.expect("server should serve") });
+        let jh = tokio::spawn(async move {
+            serve(Some(Socket::Unix(path)))
+                .await
+                .expect("server should serve")
+        });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         assert!(!jh.is_finished());
@@ -235,7 +210,11 @@ mod tests {
         );
 
         let p = path.clone();
-        let jh = tokio::spawn(async move { serve(Some(&p)).await.expect("server should serve") });
+        let jh = tokio::spawn(async move {
+            serve(Some(Socket::Unix(*p.clone())))
+                .await
+                .expect("server should serve")
+        });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");
@@ -257,7 +236,11 @@ mod tests {
         );
 
         let p = path.clone();
-        let jh = tokio::spawn(async move { serve(Some(&p)).await.expect("server should serve") });
+        let jh = tokio::spawn(async move {
+            serve(Some(Socket::Unix(*p.clone())))
+                .await
+                .expect("server should serve")
+        });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");

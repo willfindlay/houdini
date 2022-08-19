@@ -6,10 +6,9 @@
 // February 25, 2022  William Findlay  Created this.
 //
 
-//! Helpers for using a Unix domain socket with Axum.
-//! Mostly adapted from the [Axum examples][0].
-//!
-//! [0]: https://github.com/tokio-rs/axum/blob/79a0a54bc9f0f585c974b5e6793541baff980662/examples/unix-domain-socket/src/main.rs
+//! Helpers for using a virtio socket with Axum.
+
+use std::{io, pin::Pin, sync::Arc, task::Poll};
 
 use axum::{extract::connect_info, BoxError};
 use futures::{ready, task::Context};
@@ -17,17 +16,17 @@ use hyper::{
     client::connect::{Connected, Connection},
     server::accept::Accept,
 };
-use std::{io, pin::Pin, sync::Arc, task::Poll};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::{unix::UCred, UnixListener, UnixStream},
-};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_vsock::{VsockListener, VsockStream};
 
-use tokio_vsock::VsockListener;
-use tokio_vsock::VsockStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use futures::StreamExt as _;
+/// A vsock address including cid and port number.
+#[derive(Debug)]
+pub struct VsockAddr {
+    cid: u32,
+    port: u32,
+}
 
+/// Accepts the connection on behalf of the server.
 pub struct ServerAccept {
     pub virtio_sock: VsockListener,
 }
@@ -40,16 +39,14 @@ impl Accept for ServerAccept {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        println!("POLL ACCEPT");
-        let (stream, _addr) = ready!(self.virtio_sock.poll_accept(cx))?;
-        println!("test 0 {:?} -- {:?}", stream, _addr);
-        println!("test 1 {:?}", stream.local_addr());
-        println!("test 2 {:?}", stream.peer_addr());
-        println!("test 3 {:?}", _addr.to_string());
+        let (stream, addr) = ready!(self.virtio_sock.poll_accept(cx))?;
+        tracing::debug!(stream = ?stream, addr = ?addr, local_addr
+            = ?stream.local_addr(), peer_addr = ?stream.peer_addr());
         Poll::Ready(Some(Ok(stream)))
     }
 }
 
+/// A client connection.
 pub struct ClientConnection {
     stream: VsockStream,
 }
@@ -60,12 +57,10 @@ impl AsyncWrite for ClientConnection {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        println!("POLL WRITE");
         Pin::new(&mut self.stream).poll_write(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        println!("POLL FLUSH");
         Pin::new(&mut self.stream).poll_flush(cx)
     }
 
@@ -73,7 +68,6 @@ impl AsyncWrite for ClientConnection {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        println!("POLL SHUTDOWN");
         Pin::new(&mut self.stream).poll_shutdown(cx)
     }
 }
@@ -84,14 +78,12 @@ impl AsyncRead for ClientConnection {
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        println!("ASYNC READ");
         Pin::new(&mut self.stream).poll_read(cx, buf)
     }
 }
 
 impl Connection for ClientConnection {
     fn connected(&self) -> Connected {
-        println!("CONNECTION");
         Connected::new()
     }
 }
@@ -104,11 +96,10 @@ pub struct VsockConnectInfo {
 
 impl connect_info::Connected<&VsockStream> for VsockConnectInfo {
     fn connect_info(target: &VsockStream) -> Self {
-        println!("CONNECT INFO");
         let peer_addr = target.peer_addr().unwrap();
-        println!("{:?}", peer_addr);
         Self {
             peer_addr: Arc::new(peer_addr),
         }
     }
 }
+
