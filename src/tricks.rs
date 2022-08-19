@@ -14,48 +14,59 @@ pub mod report;
 
 mod steps;
 
-use std::collections::HashSet;
-use std::process::Command;
-use std::process::Stdio;
+use api::client::HoudiniClient;
 use serde::{Deserialize, Serialize};
-use anyhow::{Context as _, Result};
+use std::collections::{HashMap, HashSet};
 
 use self::{
     report::{StepReport, TrickReport},
     status::Status,
     steps::Step,
 };
-use crate::docker::reap_container;
-use crate::api;
+use crate::{api, docker::reap_container};
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Trick {
+    /// Name of the trick
     pub name: String,
+    /// Environment configuration
+    environment: Option<EnvironmentOptions>,
+    /// Steps to run
     steps: Vec<Step>,
 }
 
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageOption {
+    /// Package to install.
     pkg: String,
-	version: Option<String>,
+    /// Optional package version. Will default to latest.
+    version: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentOptions {
+    /// Kernel version to compile and use.
     kernel_tag: String,
-	kconfig: String,
+    /// Path to kernel config.
+    kconfig: Option<String>,
+    /// Path to buildroot config.
     buildroot_config: String,
-	//kconfigOverride: HashMap<String,String>,
-	//install: Vec<PackageOption>,
+    /// Overrides for kernel config.
+    #[serde(default)]
+    kconfig_options: HashMap<String, String>,
+    /// Additional packages to install.
+    #[serde(default)]
+    install: Vec<PackageOption>,
 }
 
 impl Trick {
     /// Run every step of the trick plan, returning a final status in the end.
     /// If any step returns a final status, we return that status early.
-    pub async fn run(&self, is_vm: bool) -> TrickReport {
+    pub async fn run(&self) -> TrickReport {
         tracing::info!(name = ?&self.name, "running trick");
 
         let mut containers: HashSet<String> = HashSet::new();
@@ -64,55 +75,18 @@ impl Trick {
         let mut report = TrickReport::new(&self.name);
         report.set_system_info();
 
-        let mut create_vm = 0;
-
         for step in &self.steps {
-            if create_vm == 0 {
-                if let steps::Step::createEnvironment( step ) = step {
-                    //run create environment
-                    //rest of steps get sent to VM
-                    if !is_vm {
-                        create_vm = 1;
-                    }
-                    else {
-                        continue;
-                    }
-                }
+            status = step.run().await;
 
-                if create_vm == 1 {
-                    status = step.run().await;
-                    let mut client = api::client::HoudiniVsockClient::new(3, 2375).await.unwrap();
-                    let step_report = StepReport::new(step, status);
-                    report.add(step_report);
-
-                    let step_report = client.trick(serde_json::to_vec(self).unwrap()).await.unwrap();
-
-                    for step in step_report.steps {
-                        report.add(step);
-                    }
-
-                    report.set_status(step_report.status);
-
-                    
-
-                    break;
-                }
-
-                status = step.run().await;
-
-                if let Step::SpawnContainer(step) = step {
-                    containers.insert(step.name.to_owned());
-                }
-
-                let step_report = StepReport::new(step, status);
-                report.add(step_report);
-
-                if status.is_final() {
-                    break;
-                }
+            if let Step::SpawnContainer(step) = step {
+                containers.insert(step.name.to_owned());
             }
-            else {
-                
+
+            let step_report = StepReport::new(step, status);
+            report.add(step_report);
+
+            if status.is_final() {
+                break;
             }
         }
 
@@ -283,7 +257,7 @@ mod tests {
             "#;
 
         let plan: Trick = assert_yaml_deserialize(yaml);
-        let report = plan.run(false).await;
+        let report = plan.run().await;
         assert!(
             matches!(report.status, Status::ExploitSuccess),
             "should succeed"
@@ -313,7 +287,7 @@ mod tests {
                 .into_std()
                 .await;
             let plan: Trick = serde_yaml::from_reader(&file).expect("should deserialize");
-            let trick_report = plan.run(false).await;
+            let trick_report = plan.run().await;
             let status = trick_report.status;
             report.add(trick_report);
             assert!(

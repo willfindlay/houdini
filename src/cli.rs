@@ -19,6 +19,7 @@ use clap_derive::Parser;
 
 use crate::{
     api,
+    api::client::HoudiniClient,
     logging::LoggingFormat,
     tricks::{report::Report, Trick},
 };
@@ -60,7 +61,12 @@ enum Cmd {
     /// Run houdini in Guest OS mode. This subcommand will spin up a virtio socket API
     /// server and wait for instructions to come over the socket.
     #[clap(setting = AppSettings::Hidden)]
-    Guest {},
+    Guest {
+        /// CID for the virtio socket connection.
+        cid: u32,
+        /// Port for the virtio socket connection.
+        port: u32,
+    },
 }
 
 /// Subcommands for Houdini API server.
@@ -103,7 +109,7 @@ impl Cli {
                     let trick: Trick = serde_yaml::from_reader(f.into_std().await)
                         .context(format!("failed to parse trick {}", &file.display()))?;
 
-                    report.add(trick.run(false).await);
+                    report.add(trick.run().await);
                 }
 
                 report
@@ -121,7 +127,7 @@ impl Cli {
                 subcmd: ApiCmd::Client { operation },
                 socket,
             } => {
-                let client = api::client::HoudiniClient::new(socket.as_deref())
+                let client = api::client::HoudiniUnixClient::new(socket.as_deref())
                     .context("failed to parse API socket URL")?;
 
                 match operation {
@@ -141,8 +147,9 @@ impl Cli {
                     }
                 }
             }
-            Cmd::Guest {} => {
-                tracing::info!("spinning up a guest API server")
+            Cmd::Guest { cid, port } => {
+                tracing::info!(cid = cid, port = port, "spinning up a guest API server");
+                api::serve(Some(api::Socket::Vsock(api::VsockAddr { cid, port }))).await?
             }
         }
 

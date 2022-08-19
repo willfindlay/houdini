@@ -21,12 +21,11 @@ use self::{
     host::Host,
     version::VersionCheck,
     wait::Wait,
-    environment::CreateEnvironment,
 };
 
-pub mod environment;
 pub mod command;
 pub mod container;
+pub mod environment;
 pub mod host;
 pub mod version;
 pub mod wait;
@@ -34,8 +33,7 @@ pub mod wait;
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub enum Step {
-    createEnvironment(CreateEnvironment),
+pub(crate) enum Step {
     VersionCheck(Box<VersionCheck>),
     SpawnContainer(SpawnContainer),
     KillContainer(KillContainer),
@@ -47,7 +45,6 @@ pub enum Step {
 impl Step {
     pub async fn run(&self) -> Status {
         match self {
-            Step::createEnvironment(step) => step.run(),
             Step::VersionCheck(step) => step.run(),
             Step::SpawnContainer(step) => step.run(),
             Step::KillContainer(step) => step.run(),

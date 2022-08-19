@@ -33,11 +33,9 @@ use crate::{
     CONFIG,
 };
 
-use serde::{Deserialize, Serialize};
-
 use tokio_vsock::VsockListener;
 
-pub use vsock::VsockAddr;
+pub use vsock::{Uri as VsockUri, VsockAddr};
 
 /// Houdini API server supported socket types.
 #[derive(Debug)]
@@ -97,54 +95,6 @@ async fn vsock_serve(VsockAddr { cid, port }: &VsockAddr, app: Router) -> Result
         .map_err(anyhow::Error::from)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TrickRequest {
-    request_type: String,
-    method: String,
-    uri: String,
-    body: Trick,
-}
-
-impl TrickRequest {
-    pub fn new(body: Trick) -> Self {
-        let request_type = String::from("REQUEST");
-        let method = String::from("GET");
-        let uri = String::from("\\\\trick");
-        let body = body;
-
-        return Self {
-            request_type,
-            method,
-            uri,
-            body,
-        };
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TrickResponse {
-    request_type: String,
-    method: String,
-    uri: String,
-    body: TrickReport,
-}
-
-impl TrickResponse {
-    pub fn new(body: TrickReport) -> Self {
-        let request_type = String::from("RESPONSE");
-        let method = String::from("POST");
-        let uri = String::from("\\\\trick");
-        let body = body;
-
-        return Self {
-            request_type,
-            method,
-            uri,
-            body,
-        };
-    }
-}
-
 // fn poweroff() {
 //     let test_cmd = String::from("poweroff");
 //     let out = Command::new(&test_cmd)
@@ -162,7 +112,7 @@ async fn ping() -> &'static str {
 async fn run_trick(
     Json(trick): Json<Trick>,
 ) -> Result<Json<TrickReport>, (StatusCode, &'static str)> {
-    let report = trick.run(false).await;
+    let report = trick.run().await;
     Ok(Json(report))
 }
 
@@ -174,7 +124,7 @@ async fn not_found() -> impl IntoResponse {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use super::*;
+    use super::{client::HoudiniClient, *};
     use serial_test::serial;
     use tracing_test::traced_test;
 
@@ -211,13 +161,13 @@ mod tests {
 
         let p = path.clone();
         let jh = tokio::spawn(async move {
-            serve(Some(Socket::Unix(*p.clone())))
+            serve(Some(Socket::Unix((*p).clone())))
                 .await
                 .expect("server should serve")
         });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");
+        let client = client::HoudiniUnixClient::new(Some(&path)).expect("client should connect");
         client.ping().await.expect("ping should succeed");
 
         assert!(!jh.is_finished());
@@ -237,13 +187,13 @@ mod tests {
 
         let p = path.clone();
         let jh = tokio::spawn(async move {
-            serve(Some(Socket::Unix(*p.clone())))
+            serve(Some(Socket::Unix((*p).clone())))
                 .await
                 .expect("server should serve")
         });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let client = client::HoudiniClient::new(Some(&path)).expect("client should connect");
+        let client = client::HoudiniUnixClient::new(Some(&path)).expect("client should connect");
 
         let yaml = r#"
             name: foo

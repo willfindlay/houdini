@@ -8,13 +8,13 @@
 
 //! Helpers for using a virtio socket with Axum.
 
-use std::{io, pin::Pin, sync::Arc, task::Poll};
+use std::{future::Future, io, pin::Pin, sync::Arc, task::Poll};
 
 use axum::{extract::connect_info, BoxError};
 use futures::{ready, task::Context};
+use hex::FromHex;
 use hyper::{
-    client::connect::{Connected, Connection},
-    server::accept::Accept,
+    client::connect::Connected, server::accept::Accept, service::Service, Uri as HyperUri,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_vsock::{VsockListener, VsockStream};
@@ -22,8 +22,8 @@ use tokio_vsock::{VsockListener, VsockStream};
 /// A vsock address including cid and port number.
 #[derive(Debug)]
 pub struct VsockAddr {
-    cid: u32,
-    port: u32,
+    pub cid: u32,
+    pub port: u32,
 }
 
 /// Accepts the connection on behalf of the server.
@@ -46,7 +46,6 @@ impl Accept for ServerAccept {
     }
 }
 
-/// A client connection.
 pub struct ClientConnection {
     stream: VsockStream,
 }
@@ -82,8 +81,8 @@ impl AsyncRead for ClientConnection {
     }
 }
 
-impl Connection for ClientConnection {
-    fn connected(&self) -> Connected {
+impl hyper::client::connect::Connection for ClientConnection {
+    fn connected(&self) -> hyper::client::connect::Connected {
         Connected::new()
     }
 }
@@ -103,3 +102,100 @@ impl connect_info::Connected<&VsockStream> for VsockConnectInfo {
     }
 }
 
+/// the `[VsockConnector]` can be used to construct a `[hyper::Client]` which can
+/// speak to a virtio socket.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VsockConnector;
+
+impl Unpin for VsockConnector {}
+
+impl Service<HyperUri> for VsockConnector {
+    type Response = ClientConnection;
+
+    type Error = io::Error;
+
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: HyperUri) -> Self::Future {
+        let fut = async move {
+            let (cid, port) = parse_vsock_path(&req)?;
+            Ok(ClientConnection {
+                stream: VsockStream::connect(cid, port).await?,
+            })
+        };
+        Box::pin(fut)
+    }
+}
+
+fn parse_vsock_path(uri: &HyperUri) -> Result<(u32, u32), io::Error> {
+    if uri.scheme_str() != Some("vsock") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid URL, scheme must be vsock",
+        ));
+    }
+
+    let host = uri.host().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid URL, host must be present",
+        )
+    })?;
+
+    let bytes = Vec::from_hex(host).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid URL, host must be a hex-encoded path",
+        )
+    })?;
+
+    let s = String::from_utf8_lossy(&bytes).into_owned();
+    let (cid, port) = s.split_once(':').ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid URL, host must be a hex-encoded cid:port",
+        )
+    })?;
+
+    let cid = cid.parse().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid URL, failed to parse CID: {}", e),
+        )
+    })?;
+
+    let port = port.parse().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid URL, failed to parse port: {}", e),
+        )
+    })?;
+
+    Ok((cid, port))
+}
+
+#[derive(Debug, Clone)]
+pub struct Uri {
+    hyper_uri: HyperUri,
+}
+
+impl Uri {
+    pub fn new(cid: u32, port: u32, endpoint: &str) -> Self {
+        let host = hex::encode(format!("{}:{}", cid, port).as_bytes());
+        let s = format!("vsock://{}:0{}", host, endpoint);
+        let hyper_uri: HyperUri = s.parse().expect("failed to parse hyper uri");
+
+        Self { hyper_uri }
+    }
+}
+
+impl From<Uri> for HyperUri {
+    fn from(uri: Uri) -> Self {
+        uri.hyper_uri
+    }
+}
