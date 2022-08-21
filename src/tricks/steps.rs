@@ -25,7 +25,6 @@ use self::{
 
 pub mod command;
 pub mod container;
-pub mod environment;
 pub mod host;
 pub mod version;
 pub mod wait;

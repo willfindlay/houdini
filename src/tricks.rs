@@ -12,9 +12,9 @@
 
 pub mod report;
 
+mod environment;
 mod steps;
 
-use api::client::HoudiniClient;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

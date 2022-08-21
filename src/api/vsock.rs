@@ -19,13 +19,6 @@ use hyper::{
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_vsock::{VsockListener, VsockStream};
 
-/// A vsock address including cid and port number.
-#[derive(Debug)]
-pub struct VsockAddr {
-    pub cid: u32,
-    pub port: u32,
-}
-
 /// Accepts the connection on behalf of the server.
 pub struct ServerAccept {
     pub virtio_sock: VsockListener,

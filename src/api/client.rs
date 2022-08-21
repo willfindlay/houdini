@@ -8,31 +8,31 @@
 
 //! Client logic for interacting with Houdini's API.
 
-use std::{
-    path::{Path, PathBuf},
-    thread, time,
-};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use hyper::{Body, Request};
 
-use hyperlocal::{UnixClientExt, UnixConnector, Uri};
+use hyperlocal::{UnixClientExt, UnixConnector};
 
 use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
 };
 
-use super::{vsock::VsockConnector, Socket, VsockAddr};
+use super::vsock::VsockConnector;
 
 #[async_trait]
-pub trait HoudiniClient<T>
-where
-    T: hyper::client::connect::Connect + Clone + std::marker::Send + std::marker::Sync + 'static,
-{
-    fn client(&self) -> &hyper::client::Client<T>;
-    fn uri<S: AsRef<str>>(&self, endpoint: S) -> hyper::Uri;
+pub trait HoudiniClient {
+    type Connector: hyper::client::connect::Connect
+        + Clone
+        + std::marker::Send
+        + std::marker::Sync
+        + 'static;
+
+    fn client(&self) -> &hyper::client::Client<Self::Connector>;
+    fn uri(&self, endpoint: &str) -> hyper::Uri;
 
     async fn ping(&self) -> Result<()> {
         let res = self
@@ -74,29 +74,36 @@ where
     }
 }
 
-pub struct HoudiniUnixClient<'a> {
-    client: hyper::client::Client<UnixConnector>,
-    socket: &'a Path,
+pub enum Wrapper {
+    HoudiniUnixClient(HoudiniUnixClient),
+    HoudiniVsockClient(HoudiniVsockClient),
 }
 
-impl<'a> HoudiniUnixClient<'a> {
-    pub fn new(socket: Option<&'a Path>) -> Result<Self> {
+pub struct HoudiniUnixClient {
+    client: hyper::client::Client<UnixConnector>,
+    socket: PathBuf,
+}
+
+impl HoudiniUnixClient {
+    pub fn new(socket: Option<PathBuf>) -> Result<Self> {
         let client = hyper::client::Client::unix();
 
         Ok(Self {
-            socket: socket.unwrap_or(&CONFIG.api.socket),
+            socket: socket.unwrap_or(CONFIG.api.socket.to_owned()),
             client: client.into(),
         })
     }
 }
 
-impl<'a> HoudiniClient<UnixConnector> for HoudiniUnixClient<'a> {
+impl HoudiniClient for HoudiniUnixClient {
+    type Connector = UnixConnector;
+
     fn client(&self) -> &hyper::client::Client<UnixConnector> {
         &self.client
     }
 
-    fn uri<S: AsRef<str>>(&self, endpoint: S) -> hyper::Uri {
-        hyperlocal::Uri::new(self.socket, endpoint.as_ref()).into()
+    fn uri(&self, endpoint: &str) -> hyper::Uri {
+        hyperlocal::Uri::new(&self.socket, endpoint.as_ref()).into()
     }
 }
 
@@ -119,12 +126,14 @@ impl HoudiniVsockClient {
     }
 }
 
-impl HoudiniClient<VsockConnector> for HoudiniVsockClient {
+impl HoudiniClient for HoudiniVsockClient {
+    type Connector = VsockConnector;
+
     fn client(&self) -> &hyper::client::Client<VsockConnector> {
         &self.client
     }
 
-    fn uri<S: AsRef<str>>(&self, endpoint: S) -> hyper::Uri {
+    fn uri(&self, endpoint: &str) -> hyper::Uri {
         super::VsockUri::new(self.cid, self.port, endpoint.as_ref()).into()
     }
 }

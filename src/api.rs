@@ -14,7 +14,10 @@ mod middleware;
 mod uds;
 mod vsock;
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use anyhow::{Context as _, Result};
 use axum::{
@@ -35,13 +38,27 @@ use crate::{
 
 use tokio_vsock::VsockListener;
 
-pub use vsock::{Uri as VsockUri, VsockAddr};
+pub use vsock::Uri as VsockUri;
 
 /// Houdini API server supported socket types.
 #[derive(Debug)]
 pub enum Socket {
     Unix(PathBuf),
-    Vsock(VsockAddr),
+    Vsock(u32, u32),
+}
+
+impl FromStr for Socket {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.split_once(':') {
+            Some((cid, port)) => Socket::Vsock(
+                cid.parse().context("failed to parse cid")?,
+                port.parse().context("failed to parse port")?,
+            ),
+            None => Socket::Unix(PathBuf::from_str(s).context("failed to parse unix socket path")?),
+        })
+    }
 }
 
 pub async fn serve(socket: Option<Socket>) -> Result<()> {
@@ -57,13 +74,19 @@ pub async fn serve(socket: Option<Socket>) -> Result<()> {
     let app = app.fallback(not_found.into_service());
 
     // Add middleware
-    let app = app.route_layer(
-        ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_connection)),
-    );
+    let app = match socket {
+        Some(Socket::Unix(_)) | None => app.route_layer(
+            ServiceBuilder::new().layer(axum::middleware::from_fn(middleware::log_uds_connection)),
+        ),
+        Some(Socket::Vsock(_, _)) => app.route_layer(
+            ServiceBuilder::new()
+                .layer(axum::middleware::from_fn(middleware::log_vsock_connection)),
+        ),
+    };
 
     match socket {
         Some(Socket::Unix(path)) => uds_serve(path, app).await,
-        Some(Socket::Vsock(addr)) => vsock_serve(&addr, app).await,
+        Some(Socket::Vsock(cid, port)) => vsock_serve(cid, port, app).await,
         None => uds_serve(&CONFIG.api.socket, app).await,
     }
     .context("failed to start Houdini API server")
@@ -85,8 +108,8 @@ async fn uds_serve<P: AsRef<Path>>(path: P, app: Router) -> Result<()> {
         .map_err(anyhow::Error::from)
 }
 
-async fn vsock_serve(VsockAddr { cid, port }: &VsockAddr, app: Router) -> Result<()> {
-    let virtio_sock = VsockListener::bind(*cid, *port).expect("unable to bind virtio listener");
+async fn vsock_serve(cid: u32, port: u32, app: Router) -> Result<()> {
+    let virtio_sock = VsockListener::bind(cid, port).context("unable to bind virtio listener")?;
 
     tracing::info!("server listening on {}:{}...", cid, port);
     axum::Server::builder(vsock::ServerAccept { virtio_sock })
@@ -167,7 +190,8 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let client = client::HoudiniUnixClient::new(Some(&path)).expect("client should connect");
+        let client =
+            client::HoudiniUnixClient::new(Some((*path).clone())).expect("client should connect");
         client.ping().await.expect("ping should succeed");
 
         assert!(!jh.is_finished());
@@ -193,7 +217,8 @@ mod tests {
         });
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let client = client::HoudiniUnixClient::new(Some(&path)).expect("client should connect");
+        let client =
+            client::HoudiniUnixClient::new(Some((*path).clone())).expect("client should connect");
 
         let yaml = r#"
             name: foo
