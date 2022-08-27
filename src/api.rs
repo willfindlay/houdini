@@ -118,15 +118,6 @@ async fn vsock_serve(cid: u32, port: u32, app: Router) -> Result<()> {
         .map_err(anyhow::Error::from)
 }
 
-// fn poweroff() {
-//     let test_cmd = String::from("poweroff");
-//     let out = Command::new(&test_cmd)
-//         .stdout(Stdio::piped())
-//         .output()
-//         .map_err(anyhow::Error::from)
-//         .context("failed to run command");
-// }
-
 async fn ping() -> &'static str {
     "pong"
 }

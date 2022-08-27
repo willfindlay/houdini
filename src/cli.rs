@@ -26,7 +26,7 @@ use crate::{
         Socket,
     },
     logging::LoggingFormat,
-    tricks::{report::Report, Trick},
+    tricks::{environment::create_buildroot_image, report::Report, Trick},
 };
 
 /// Describes Houdini's command line interface.

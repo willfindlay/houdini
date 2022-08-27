@@ -10,20 +10,20 @@
 //! (e.g. a container escape or privilege escalation). This module defines data structures
 //! that represent a [`Trick`] and its [`Step`]s.
 
+pub(crate) mod environment;
 pub mod report;
 
-mod environment;
 mod steps;
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use self::{
     report::{StepReport, TrickReport},
     status::Status,
     steps::Step,
 };
-use crate::{api, docker::reap_container};
+use crate::docker::reap_container;
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -32,35 +32,9 @@ pub struct Trick {
     /// Name of the trick
     pub name: String,
     /// Environment configuration
-    environment: Option<EnvironmentOptions>,
+    environment: Option<environment::EnvironmentOptions>,
     /// Steps to run
     steps: Vec<Step>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PackageOption {
-    /// Package to install.
-    pkg: String,
-    /// Optional package version. Will default to latest.
-    version: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EnvironmentOptions {
-    /// Kernel version to compile and use.
-    kernel_tag: String,
-    /// Path to kernel config.
-    kconfig: Option<String>,
-    /// Path to buildroot config.
-    buildroot_config: String,
-    /// Overrides for kernel config.
-    #[serde(default)]
-    kconfig_options: HashMap<String, String>,
-    /// Additional packages to install.
-    #[serde(default)]
-    install: Vec<PackageOption>,
 }
 
 impl Trick {
@@ -71,6 +45,8 @@ impl Trick {
 
         let mut containers: HashSet<String> = HashSet::new();
         let mut status = Status::Undecided;
+
+        if let Some(opts) = &self.environment {}
 
         let mut report = TrickReport::new(&self.name);
         report.set_system_info();
