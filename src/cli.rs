@@ -26,7 +26,7 @@ use crate::{
         Socket,
     },
     logging::LoggingFormat,
-    tricks::{environment::create_buildroot_image, report::Report, Trick},
+    tricks::{environment::launch_guest, report::Report, Trick},
 };
 
 /// Describes Houdini's command line interface.
@@ -72,6 +72,13 @@ enum Cmd {
         /// Port for the virtio socket connection.
         port: u32,
     },
+    /// Development and debugging-related subcommands.
+    #[clap(setting = AppSettings::Hidden)]
+    Debug {
+        /// The subcommand to run.
+        #[clap(subcommand)]
+        subcmd: DebugCmd,
+    },
 }
 
 /// Subcommands for Houdini API server.
@@ -94,6 +101,34 @@ enum ClientOperation {
     Ping,
     /// Run a trick on the server and get back the result.
     Trick {
+        /// The exploit to run.
+        trick: PathBuf,
+    },
+}
+
+/// Debugging and development subcommands for Houdini.
+#[derive(Parser, Debug)]
+enum DebugCmd {
+    /// Run the Houdini API server.
+    RunGuest {
+        /// CID for the virtio socket connection.
+        #[clap(long, short, default_value = "3")]
+        cid: u32,
+        /// Port for the virtio socket connection.
+        #[clap(long, short, default_value = "2375")]
+        port: u32,
+        /// Path to kernel bzImage.
+        #[clap(long, short)]
+        bzimage: PathBuf,
+        /// Path to init ramdisk.
+        #[clap(long, short)]
+        initrd: PathBuf,
+        /// RAM in GiB to use for the VM.
+        #[clap(long, default_value = "4")]
+        ram: u32,
+        /// Number of CPU cores to use for the VM.
+        #[clap(long, default_value = "4")]
+        cpu: u32,
         /// The exploit to run.
         trick: PathBuf,
     },
@@ -172,6 +207,33 @@ impl Cli {
                 tracing::info!(cid = cid, port = port, "spinning up a guest API server");
                 api::serve(Some(api::Socket::Vsock(cid, port))).await?
             }
+            Cmd::Debug { subcmd } => match subcmd {
+                DebugCmd::RunGuest {
+                    cid,
+                    port,
+                    bzimage,
+                    initrd,
+                    ram,
+                    cpu,
+                    trick,
+                } => {
+                    let mut guest = launch_guest(cid, cpu, ram, bzimage, initrd)?;
+                    std::thread::sleep_ms(3000);
+                    let client = HoudiniVsockClient::new(cid, port)?;
+
+                    let f = File::open(&trick)
+                        .await
+                        .context(format!("could not open trick file {}", &trick.display()))?;
+
+                    let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                        .context(format!("failed to parse trick {}", &trick.display()))?;
+
+                    let report = client.trick(&trick).await?;
+                    let out = serde_json::to_string_pretty(&report)?;
+                    println!("{}", out);
+                    let _ = guest.kill();
+                }
+            },
         }
 
         Ok(())

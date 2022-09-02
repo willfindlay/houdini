@@ -119,7 +119,7 @@ pub(crate) fn launch_guest<P: AsRef<Path>>(
         .arg("-M")
         .arg("pc")
         .arg("-m")
-        .arg(memory.to_string().as_str())
+        .arg(format!("{}G", memory.to_string()))
         .arg("-nographic")
         .arg("-smp")
         .arg(ncpus.to_string().as_str())
@@ -138,9 +138,8 @@ pub(crate) fn launch_guest<P: AsRef<Path>>(
             "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid={}",
             cid
         ))
-        // TODO: I don't think we need port forwarding, delete this?
-        // .arg("-netdev")
-        // .arg("user,id=mynet0,hostfwd=tcp::30022-:22,hostfwd=tcp::32375-:2375")
+        .arg("-netdev")
+        .arg("user,id=mynet0")
         .arg("-device")
         .arg("virtio-net-pci,netdev=mynet0")
         .spawn()
