@@ -15,6 +15,7 @@ pub mod report;
 
 mod steps;
 
+use rand::seq::IteratorRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -23,7 +24,7 @@ use self::{
     status::Status,
     steps::Step,
 };
-use crate::docker::reap_container;
+use crate::{docker::reap_container, tricks::environment::launch_guest};
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -43,12 +44,36 @@ impl Trick {
     pub async fn run(&self) -> TrickReport {
         tracing::info!(name = ?&self.name, "running trick");
 
+        let mut report = TrickReport::new(&self.name);
+
         let mut containers: HashSet<String> = HashSet::new();
         let mut status = Status::Undecided;
 
-        if let Some(opts) = &self.environment {}
+        if let Some(opts) = &self.environment {
+            let (bzimage, rootfs) = match (opts.bzimage.as_ref(), opts.rootfs.as_ref()) {
+                (Some(bzimage), Some(rootfs)) => (bzimage, rootfs),
+                _ => {
+                    tracing::error!(
+                        "both bzImage and rootFS must currently be set in environmentOptions"
+                    );
+                    report.status = Status::SetupFailure;
+                    return report;
+                }
+            };
 
-        let mut report = TrickReport::new(&self.name);
+            // Choose a random cid
+            let cid = (libc::VMADDR_CID_HOST + 1..libc::VMADDR_CID_ANY)
+                .choose(&mut rand::thread_rng())
+                .expect("iterator not empty");
+
+            // Launch the guest
+            if let Err(e) = launch_guest(cid, opts.ncpus, opts.memory, bzimage, rootfs) {
+                tracing::error!( err = ?e, "failed to launch guest");
+                report.status = Status::SetupFailure;
+                return report;
+            };
+        }
+
         report.set_system_info();
 
         for step in &self.steps {

@@ -21,34 +21,47 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufRea
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageOption {
     /// Package to install.
-    pkg: String,
+    pub pkg: String,
     /// Optional package version. Will default to latest.
-    version: Option<String>,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentOptions {
     #[serde(skip)]
-    relative_dir: PathBuf,
+    pub relative_dir: PathBuf,
+    /// Path to the bzImage (if this file exists at run time, use this instead of building
+    /// the kernel). Can be a path relative to the location of the trick config.
+    #[serde(alias = "bzImage")]
+    pub bzimage: Option<PathBuf>,
+    /// Path to the root filesystem image (if this file exists at run time, use this
+    /// instead of building the image). Can be a path relative to the location of the
+    /// trick config.
+    #[serde(alias = "rootFS")]
+    pub rootfs: Option<PathBuf>,
+    /// Number of CPUs to use for the guest. Default is 1.
+    #[serde(default = "crate::serde_defaults::default_one_u32")]
+    pub ncpus: u32,
+    /// Memory to assign to the VM in GB. Default is 2GB.
+    #[serde(default = "crate::serde_defaults::default_two_u32")]
+    pub memory: u32,
     /// Kernel version to compile and use.
-    kernel_tag: String,
+    pub kernel_tag: String,
     /// Path to kernel config.
-    kconfig: Option<PathBuf>,
+    pub kconfig: Option<PathBuf>,
     /// Path to buildroot config.
-    buildroot: Option<PathBuf>,
+    pub buildroot: Option<PathBuf>,
     /// Overrides for kernel config.
     #[serde(default)]
-    kconfig_opts: HashMap<String, String>,
+    pub kconfig_opts: HashMap<String, String>,
     /// Overrides for buildroot config.
     #[serde(default)]
-    buildroot_opts: HashMap<String, String>,
+    pub buildroot_opts: HashMap<String, String>,
     /// Additional packages to install.
     #[serde(default)]
-    install: Vec<PackageOption>,
+    pub install: Vec<PackageOption>,
 }
-
-impl EnvironmentOptions {}
 
 /// Parse a KEY=VAL config from a reader into a hashmap.
 async fn parse_config<T: AsyncBufRead + Unpin>(

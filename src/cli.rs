@@ -10,7 +10,7 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 use tokio::fs::File;
 
 use anyhow::{Context, Result};
@@ -218,7 +218,7 @@ impl Cli {
                     trick,
                 } => {
                     let mut guest = launch_guest(cid, cpu, ram, bzimage, initrd)?;
-                    std::thread::sleep_ms(3000);
+                    std::thread::sleep(Duration::from_secs(3));
                     let client = HoudiniVsockClient::new(cid, port)?;
 
                     let f = File::open(&trick)
