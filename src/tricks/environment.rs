@@ -31,6 +31,10 @@ pub struct PackageOption {
 pub struct EnvironmentOptions {
     #[serde(skip)]
     pub relative_dir: PathBuf,
+    // CID to connect to the Houdini vsock
+    pub cid: u32,
+    // Port to connect to the Houdini vsock
+    pub port: u32,
     /// Path to the bzImage (if this file exists at run time, use this instead of building
     /// the kernel). Can be a path relative to the location of the trick config.
     #[serde(alias = "bzImage")]

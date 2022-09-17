@@ -15,16 +15,20 @@ pub mod report;
 
 mod steps;
 
-use rand::seq::IteratorRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use tokio::time::timeout;
 
 use self::{
     report::{StepReport, TrickReport},
     status::Status,
     steps::Step,
 };
-use crate::{docker::reap_container, tricks::environment::launch_guest};
+use crate::{
+    api::client::{HoudiniClient, HoudiniVsockClient},
+    docker::reap_container,
+    tricks::environment::launch_guest,
+};
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -50,6 +54,8 @@ impl Trick {
         let mut status = Status::Undecided;
 
         if let Some(opts) = &self.environment {
+            tracing::info!(name = ?&self.name, "detected environment options, running trick");
+
             let (bzimage, rootfs) = match (opts.bzimage.as_ref(), opts.rootfs.as_ref()) {
                 (Some(bzimage), Some(rootfs)) => (bzimage, rootfs),
                 _ => {
@@ -61,17 +67,46 @@ impl Trick {
                 }
             };
 
-            // Choose a random cid
-            let cid = (libc::VMADDR_CID_HOST + 1..libc::VMADDR_CID_ANY)
-                .choose(&mut rand::thread_rng())
-                .expect("iterator not empty");
-
             // Launch the guest
-            if let Err(e) = launch_guest(cid, opts.ncpus, opts.memory, bzimage, rootfs) {
+            if let Err(e) = launch_guest(opts.cid, opts.ncpus, opts.memory, bzimage, rootfs) {
                 tracing::error!( err = ?e, "failed to launch guest");
                 report.status = Status::SetupFailure;
                 return report;
             };
+
+            // Spawn houdini client
+            let client = match HoudiniVsockClient::new(opts.cid, opts.port) {
+                Ok(client) => client,
+                Err(e) => {
+                    tracing::error!(err = ?e, "failed to spawn Houdini client");
+                    report.status = Status::SetupFailure;
+                    return report;
+                }
+            };
+
+            // Attempt to poll for the houdini server, timing out after 30 seconds
+            for i in 0..30 {
+                match timeout(std::time::Duration::from_secs(3), client.ping()).await {
+                    Err(e) if i == 29 => {
+                        tracing::error!(err = ?e, "failed to wait for Houdini server to run in guest");
+                        report.status = Status::SetupFailure;
+                        return report;
+                    }
+                    Ok(_) => break,
+                    _ => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+                }
+            }
+
+            let report = match client.trick(self).await {
+                Ok(report) => report,
+                Err(e) => {
+                    tracing::error!(err = ?e, "failed to request trick run in guest");
+                    report.status = Status::SetupFailure;
+                    return report;
+                }
+            };
+
+            return report;
         }
 
         report.set_system_info();
