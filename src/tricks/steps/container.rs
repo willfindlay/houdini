@@ -8,15 +8,26 @@
 
 //! This module defines the steps that manipulate containers.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio::process::Command;
 
 use super::{command::ShellCommand, RunStep};
 use crate::{
     docker::{kill_container, run_command, spawn_container, ImagePullPolicy},
     tricks::status::Status,
 };
+
+/// AppArmor policy options.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AppArmorPoilicyOpts {
+    pub name: String,
+    pub path: PathBuf,
+}
 
 /// Spawn a container using the docker api.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -39,6 +50,10 @@ pub(crate) struct SpawnContainer {
     /// List of string options to customize LSM systems like SELinux.
     #[serde(default)]
     pub security: Vec<String>,
+    /// AppArmor policy to use for the docker container. Unlike `security`, this option
+    /// will also implicitly load the AppArmor policy.
+    #[serde(default)]
+    pub app_armor: Option<AppArmorPoilicyOpts>,
     /// Spawn the container with extra privileges.
     #[serde(default = "crate::serde_defaults::default_false")]
     pub privileged: bool,
@@ -53,6 +68,19 @@ pub(crate) struct SpawnContainer {
 #[async_trait]
 impl RunStep for SpawnContainer {
     async fn do_run(&self) -> Result<()> {
+        // Avoiding the clone here is annoying but let's fix it later
+        let app_armor = self.app_armor.clone();
+
+        if let Some(app_armor) = &app_armor {
+            let status = Command::new("apparmor_parser")
+                .args(&["-r", "-W", &app_armor.path.to_string_lossy()])
+                .status()
+                .await?;
+            if !status.success() {
+                anyhow::bail!("failed to run apparmor_parser: {}", status)
+            }
+        }
+
         spawn_container(
             &self.name,
             &self.image,
@@ -61,6 +89,7 @@ impl RunStep for SpawnContainer {
             &self.volumes,
             self.privileged,
             &self.security,
+            app_armor.map(|aa| aa.name).as_deref(),
         )
         .await
     }
