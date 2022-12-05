@@ -10,16 +10,23 @@
 //! entrypoint logic. Its public interface is [`Cli::run()`], which consumes [`Cli`]
 //! and executes the corresponding subcommand.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 use tokio::fs::File;
 
 use anyhow::{Context, Result};
+use clap::AppSettings;
 use clap_derive::Parser;
 
 use crate::{
     api,
+    api::{
+        client::{
+            HoudiniClient, HoudiniUnixClient, HoudiniVsockClient, Wrapper as HoudiniClientWrapper,
+        },
+        Socket,
+    },
     logging::LoggingFormat,
-    tricks::{report::Report, Trick},
+    tricks::{environment::launch_guest, report::Report, Trick},
 };
 
 /// Describes Houdini's command line interface.
@@ -54,7 +61,23 @@ enum Cmd {
         subcmd: ApiCmd,
         /// The path to the Houdini socket. Defaults to the value in Houdini configs.
         #[clap(global = true, long, short)]
-        socket: Option<PathBuf>,
+        socket: Option<Socket>,
+    },
+    /// Run houdini in Guest OS mode. This subcommand will spin up a virtio socket API
+    /// server and wait for instructions to come over the socket.
+    #[clap(setting = AppSettings::Hidden)]
+    Guest {
+        /// CID for the virtio socket connection.
+        cid: u32,
+        /// Port for the virtio socket connection.
+        port: u32,
+    },
+    /// Development and debugging-related subcommands.
+    #[clap(setting = AppSettings::Hidden)]
+    Debug {
+        /// The subcommand to run.
+        #[clap(subcommand)]
+        subcmd: DebugCmd,
     },
 }
 
@@ -78,6 +101,34 @@ enum ClientOperation {
     Ping,
     /// Run a trick on the server and get back the result.
     Trick {
+        /// The exploit to run.
+        trick: PathBuf,
+    },
+}
+
+/// Debugging and development subcommands for Houdini.
+#[derive(Parser, Debug)]
+enum DebugCmd {
+    /// Run the Houdini API server.
+    RunGuest {
+        /// CID for the virtio socket connection.
+        #[clap(long, short, default_value = "3")]
+        cid: u32,
+        /// Port for the virtio socket connection.
+        #[clap(long, short, default_value = "2375")]
+        port: u32,
+        /// Path to kernel bzImage.
+        #[clap(long, short)]
+        bzimage: PathBuf,
+        /// Path to init ramdisk.
+        #[clap(long, short)]
+        initrd: PathBuf,
+        /// RAM in GiB to use for the VM.
+        #[clap(long, default_value = "4")]
+        ram: u32,
+        /// Number of CPU cores to use for the VM.
+        #[clap(long, default_value = "4")]
+        cpu: u32,
         /// The exploit to run.
         trick: PathBuf,
     },
@@ -109,18 +160,26 @@ impl Cli {
             Cmd::Api {
                 subcmd: ApiCmd::Serve,
                 socket,
-            } => {
-                api::serve(socket.as_deref()).await?;
-            }
+            } => api::serve(socket).await?,
             Cmd::Api {
                 subcmd: ApiCmd::Client { operation },
                 socket,
             } => {
-                let client = api::client::HoudiniClient::new(socket.as_deref())
-                    .context("failed to parse API socket URL")?;
+                let client = match socket {
+                    Some(Socket::Unix(path)) => {
+                        HoudiniClientWrapper::HoudiniUnixClient(HoudiniUnixClient::new(Some(path))?)
+                    }
+                    Some(Socket::Vsock(cid, port)) => HoudiniClientWrapper::HoudiniVsockClient(
+                        HoudiniVsockClient::new(cid, port)?,
+                    ),
+                    None => HoudiniClientWrapper::HoudiniUnixClient(HoudiniUnixClient::new(None)?),
+                };
 
                 match operation {
-                    ClientOperation::Ping => client.ping().await?,
+                    ClientOperation::Ping => match client {
+                        HoudiniClientWrapper::HoudiniUnixClient(client) => client.ping().await?,
+                        HoudiniClientWrapper::HoudiniVsockClient(client) => client.ping().await?,
+                    },
                     ClientOperation::Trick { trick } => {
                         let f = File::open(&trick)
                             .await
@@ -129,13 +188,52 @@ impl Cli {
                         let trick: Trick = serde_yaml::from_reader(f.into_std().await)
                             .context(format!("failed to parse trick {}", &trick.display()))?;
 
-                        let report = client.trick(&trick).await?;
+                        let report = match client {
+                            HoudiniClientWrapper::HoudiniUnixClient(client) => {
+                                client.trick(&trick).await?
+                            }
+                            HoudiniClientWrapper::HoudiniVsockClient(client) => {
+                                client.trick(&trick).await?
+                            }
+                        };
+
                         let out = serde_json::to_string_pretty(&report)?;
 
                         println!("{}", out);
                     }
                 }
             }
+            Cmd::Guest { cid, port } => {
+                tracing::info!(cid = cid, port = port, "spinning up a guest API server");
+                api::serve(Some(api::Socket::Vsock(cid, port))).await?
+            }
+            Cmd::Debug { subcmd } => match subcmd {
+                DebugCmd::RunGuest {
+                    cid,
+                    port,
+                    bzimage,
+                    initrd,
+                    ram,
+                    cpu,
+                    trick,
+                } => {
+                    let mut guest = launch_guest(cid, cpu, ram, bzimage, initrd)?;
+                    std::thread::sleep(Duration::from_secs(3));
+                    let client = HoudiniVsockClient::new(cid, port)?;
+
+                    let f = File::open(&trick)
+                        .await
+                        .context(format!("could not open trick file {}", &trick.display()))?;
+
+                    let trick: Trick = serde_yaml::from_reader(f.into_std().await)
+                        .context(format!("failed to parse trick {}", &trick.display()))?;
+
+                    let report = client.trick(&trick).await?;
+                    let out = serde_json::to_string_pretty(&report)?;
+                    println!("{}", out);
+                    let _ = guest.kill();
+                }
+            },
         }
 
         Ok(())

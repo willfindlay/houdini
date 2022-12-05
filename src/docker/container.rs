@@ -51,6 +51,7 @@ pub async fn spawn_container(
     volumes: &[String],
     privileged: bool,
     security_options: &[String],
+    app_armor: Option<&str>,
 ) -> Result<()> {
     image_policy
         .acquire_image(image)
@@ -59,11 +60,16 @@ pub async fn spawn_container(
 
     let client = client()?;
 
+    let mut security_options = security_options.to_owned();
+    if let Some(app_armor) = app_armor {
+        security_options.push(format!("apparmor={}", app_armor))
+    }
+
     let opts = CreateContainerOptions { name };
     let host_config = HostConfig {
         binds: Some(volumes.to_owned()),
         auto_remove: Some(true),
-        security_opt: Some(security_options.to_owned()),
+        security_opt: Some(security_options),
         // mounts: todo!(),
         // cap_add: todo!(),
         // cap_drop: todo!(),

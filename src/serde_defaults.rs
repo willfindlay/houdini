@@ -25,6 +25,14 @@ pub fn default_skip() -> Status {
     Status::Skip
 }
 
+pub fn default_one_u32() -> u32 {
+    1
+}
+
+pub fn default_two_u32() -> u32 {
+    2
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

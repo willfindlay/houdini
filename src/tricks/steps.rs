@@ -23,11 +23,11 @@ use self::{
     wait::Wait,
 };
 
-pub(crate) mod command;
-pub(crate) mod container;
-pub(crate) mod host;
-pub(crate) mod version;
-pub(crate) mod wait;
+pub mod command;
+pub mod container;
+pub mod host;
+pub mod version;
+pub mod wait;
 
 /// A series of steps for running and verifying the status of a container exploit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -56,7 +56,7 @@ impl Step {
 }
 
 #[async_trait]
-pub(crate) trait RunStep: Debug {
+pub trait RunStep: Debug {
     /// Run the step, returning the corresponding exploit status depending on whether it
     /// succeeded or failed.
     async fn run(&self) -> Status {

@@ -8,42 +8,35 @@
 
 //! Client logic for interacting with Houdini's API.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use hyper::{Body, Request};
-use hyperlocal::{UnixClientExt, UnixConnector, Uri};
+
+use hyperlocal::{UnixClientExt, UnixConnector};
 
 use crate::{
     tricks::{report::TrickReport, Trick},
     CONFIG,
 };
 
-pub struct HoudiniClient<'a> {
-    client: hyper::client::Client<UnixConnector>,
-    socket: &'a Path,
-}
+use super::vsock::VsockConnector;
 
-impl<'a> HoudiniClient<'a> {
-    pub fn new(socket: Option<&'a Path>) -> Result<Self> {
-        let socket = if let Some(socket) = socket {
-            socket
-        } else {
-            &CONFIG.api.socket
-        };
+#[async_trait]
+pub trait HoudiniClient {
+    type Connector: hyper::client::connect::Connect
+        + Clone
+        + std::marker::Send
+        + std::marker::Sync
+        + 'static;
 
-        let client = hyper::client::Client::unix();
+    fn client(&self) -> &hyper::client::Client<Self::Connector>;
+    fn uri(&self, endpoint: &str) -> hyper::Uri;
 
-        Ok(Self { socket, client })
-    }
-
-    fn uri<S: AsRef<str>>(&self, endpoint: S) -> hyper::Uri {
-        Uri::new(self.socket, endpoint.as_ref()).into()
-    }
-
-    pub async fn ping(&self) -> Result<()> {
+    async fn ping(&self) -> Result<()> {
         let res = self
-            .client
+            .client()
             .get(self.uri("/ping"))
             .await
             .context("ping failed")?;
@@ -56,7 +49,7 @@ impl<'a> HoudiniClient<'a> {
         }
     }
 
-    pub async fn trick(&self, trick: &Trick) -> Result<TrickReport> {
+    async fn trick(&self, trick: &Trick) -> Result<TrickReport> {
         let req = Request::builder()
             .header("content-type", "application/json")
             .method("POST")
@@ -67,7 +60,7 @@ impl<'a> HoudiniClient<'a> {
             .expect("request builder");
 
         let res = self
-            .client
+            .client()
             .request(req)
             .await
             .context("trick request failed")?;
@@ -78,5 +71,69 @@ impl<'a> HoudiniClient<'a> {
 
         let body = hyper::body::to_bytes(res.into_body()).await?.to_vec();
         serde_json::from_slice(body.as_slice()).context("failed to deserialize response")
+    }
+}
+
+pub enum Wrapper {
+    HoudiniUnixClient(HoudiniUnixClient),
+    HoudiniVsockClient(HoudiniVsockClient),
+}
+
+pub struct HoudiniUnixClient {
+    client: hyper::client::Client<UnixConnector>,
+    socket: PathBuf,
+}
+
+impl HoudiniUnixClient {
+    pub fn new(socket: Option<PathBuf>) -> Result<Self> {
+        let client = hyper::client::Client::unix();
+
+        Ok(Self {
+            socket: socket.unwrap_or(CONFIG.api.socket.to_owned()),
+            client: client.into(),
+        })
+    }
+}
+
+impl HoudiniClient for HoudiniUnixClient {
+    type Connector = UnixConnector;
+
+    fn client(&self) -> &hyper::client::Client<UnixConnector> {
+        &self.client
+    }
+
+    fn uri(&self, endpoint: &str) -> hyper::Uri {
+        hyperlocal::Uri::new(&self.socket, endpoint.as_ref()).into()
+    }
+}
+
+pub struct HoudiniVsockClient {
+    cid: u32,
+    port: u32,
+    client: hyper::client::Client<VsockConnector>,
+}
+
+impl HoudiniVsockClient {
+    pub fn new(cid: u32, port: u32) -> Result<Self> {
+        let client: hyper::Client<VsockConnector> =
+            hyper::client::Client::builder().build(VsockConnector);
+
+        Ok(Self {
+            cid,
+            port,
+            client: client.into(),
+        })
+    }
+}
+
+impl HoudiniClient for HoudiniVsockClient {
+    type Connector = VsockConnector;
+
+    fn client(&self) -> &hyper::client::Client<VsockConnector> {
+        &self.client
+    }
+
+    fn uri(&self, endpoint: &str) -> hyper::Uri {
+        super::VsockUri::new(self.cid, self.port, endpoint.as_ref()).into()
     }
 }
