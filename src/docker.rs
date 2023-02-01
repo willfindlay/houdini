@@ -12,4 +12,4 @@ mod image;
 mod util;
 
 pub use container::{kill_container, reap_container, run_command, spawn_container};
-pub use image::ImagePullPolicy;
+pub use image::{ImagePullPolicy, PullOpts};

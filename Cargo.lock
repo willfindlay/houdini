@@ -483,6 +483,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-new"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3418329ca0ad70234b9735dc4ceed10af4df60eff9c8e7b06cb5e520d92c3535"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -777,6 +788,7 @@ dependencies = [
  "clap",
  "clap_derive",
  "config",
+ "derive-new",
  "directories",
  "flate2",
  "futures",
@@ -786,6 +798,7 @@ dependencies = [
  "humantime-serde",
  "hyper",
  "hyperlocal",
+ "itertools",
  "jwalk",
  "lazy_static",
  "libc",
@@ -980,9 +993,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.10.3"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
 ]

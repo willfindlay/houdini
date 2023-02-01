@@ -10,7 +10,7 @@
 //! (e.g. a container escape or privilege escalation). This module defines data structures
 //! that represent a [`Trick`] and its [`Step`]s.
 
-pub(crate) mod environment;
+pub mod guest;
 pub mod report;
 
 mod steps;
@@ -27,7 +27,7 @@ use self::{
 use crate::{
     api::client::{HoudiniClient, HoudiniVsockClient},
     docker::reap_container,
-    tricks::environment::launch_guest,
+    tricks::guest::launch_guest,
 };
 
 /// A series of steps for running and verifying the status of a container exploit.
@@ -36,8 +36,6 @@ use crate::{
 pub struct Trick {
     /// Name of the trick
     pub name: String,
-    /// Environment configuration
-    environment: Option<environment::EnvironmentOptions>,
     /// Steps to run
     steps: Vec<Step>,
 }
