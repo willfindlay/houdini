@@ -55,8 +55,7 @@ impl ImagePullPolicy {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PullOpts {
-    #[serde(default = "crate::serde_defaults::default_true")]
-    /// Should we always pull even when the image exists on the host? Defaults to true.
+    /// Should we always pull even when the image exists on the host?
     always: bool,
     #[serde(alias = "sha256")]
     /// SHA256 sum to use to verify the container image.

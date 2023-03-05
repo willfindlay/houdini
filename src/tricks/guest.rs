@@ -12,11 +12,15 @@ use anyhow::{Context as _, Result};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
 use crate::docker::ImagePullPolicy;
+
+pub trait IntoQemuArg {
+    fn into_qemu_arg(&self) -> String;
+}
 
 /// Possible sources for kernel and rootfs images.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,7 +61,10 @@ impl IntoIterator for ImageMatrix {
             .into_iter()
             .cartesian_product(self.rootfs)
             .into_iter()
-            .map(|(kernel, rootfs)| Image { kernel, rootfs })
+            .map(|(kernel, rootfs)| Image {
+                kernel: Some(kernel),
+                rootfs,
+            })
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -66,30 +73,33 @@ impl IntoIterator for ImageMatrix {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Image {
-    pub kernel: ImageSpec,
+    pub kernel: Option<ImageSpec>,
     pub rootfs: ImageSpec,
 }
 
 impl Image {
     async fn pull(&self) -> Result<()> {
-        self.kernel
-            .image_policy
-            .acquire_image(&self.kernel.image)
-            .await?;
+        if let Some(ref kernel) = self.kernel {
+            kernel.image_policy.acquire_image(&kernel.image).await?;
+        }
         self.rootfs
             .image_policy
             .acquire_image(&self.rootfs.image)
             .await?;
         Ok(())
     }
+
+    async fn create_filesystem() -> PathBuf {
+        todo!()
+    }
 }
 
 /// Filesystems supported by Houdini.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub enum FileSystem {}
-
-async fn oci_to_disk_image(image: &str, outfile: &str, filesystem: FileSystem) {}
+pub enum FileSystem {
+    Ext4,
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -129,7 +139,7 @@ pub(crate) fn launch_guest<P: AsRef<Path>>(
         .arg("-initrd")
         .arg(initrd.as_ref().display().to_string().as_str())
         .arg("-append")
-        .arg("console=tty1 console=ttyS0")
+        .arg("console=ttyS0")
         .arg("-netdev")
         .arg("user,id=n1")
         .arg("-device")
