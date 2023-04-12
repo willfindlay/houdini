@@ -12,6 +12,7 @@
 
 mod api;
 mod cli;
+mod guest;
 mod serde_defaults;
 mod testutils;
 mod tricks;
@@ -22,3 +23,4 @@ pub mod logging;
 
 pub use crate::config::CONFIG;
 pub use cli::Cli;
+

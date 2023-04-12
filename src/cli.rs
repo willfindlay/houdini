@@ -26,7 +26,7 @@ use crate::{
         Socket,
     },
     logging::LoggingFormat,
-    tricks::{environment::launch_guest, report::Report, Trick},
+    tricks::{guest::launch_guest, report::Report, Trick},
 };
 
 /// Describes Houdini's command line interface.

@@ -52,7 +52,7 @@ impl ImagePullPolicy {
 }
 
 /// Options for pulling an image.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, derive_new::new)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PullOpts {
     /// Should we always pull even when the image exists on the host?

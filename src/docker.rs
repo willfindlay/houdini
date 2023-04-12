@@ -9,7 +9,7 @@
 
 mod container;
 mod image;
-mod util;
+pub mod util;
 
-pub use container::{kill_container, reap_container, run_command, spawn_container};
+pub use container::{export_rootfs, kill_container, reap_container, run_command, spawn_container};
 pub use image::{ImagePullPolicy, PullOpts};

@@ -1,0 +1,5 @@
+- disks from docker images still not bootable (still investigating, might need to inject a minimal bootloader into the disk image)
+- not happy with image creation workflow as it relies on calling external programs at the moment (switch to libguestfs?)
+- need a better way to interact with the running vm (qapi crate might be the answer, adds a new dependency on qemu api server but I think that's fine)
+
+- moving guest management stuff into a top-level guest module (TODO: remove the old one)

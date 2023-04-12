@@ -9,14 +9,84 @@
 
 use anyhow::{Context as _, Result};
 use bollard::{
-    container::{Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions},
+    container::{
+        Config, CreateContainerOptions, DownloadFromContainerOptions, RemoveContainerOptions,
+        WaitContainerOptions,
+    },
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     models::HostConfig,
 };
 use futures::StreamExt;
-use std::ops::Deref;
+use scopeguard::defer;
+use std::{fmt::Display, ops::Deref, path::Path, sync::Arc};
+use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
 
 use super::{util::client, ImagePullPolicy};
+
+/// A wrapper for a container ID.
+pub struct ContainerId(String);
+
+impl From<String> for ContainerId {
+    fn from(value: String) -> Self {
+        ContainerId(value)
+    }
+}
+
+impl From<ContainerId> for String {
+    fn from(value: ContainerId) -> Self {
+        value.0
+    }
+}
+
+impl Display for ContainerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Export root filesystem from a container image.
+pub async fn export_rootfs<P: AsRef<Path>>(image_name: &str, file_name: P) -> Result<()> {
+    let client = Arc::new(client()?);
+
+    let container_name = Arc::new(Uuid::new_v4().to_string());
+
+    client
+        .create_container(
+            Some(CreateContainerOptions {
+                name: container_name.as_ref(),
+            }),
+            Config {
+                image: Some(image_name),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let executor = tokio::runtime::Handle::current();
+    defer! {
+        let client_c = client.clone();
+        let container_name_c = container_name.clone();
+        executor.spawn(async move {
+            let _ = client_c.remove_container(&container_name_c, None).await;
+        });
+    }
+
+    let mut file = tokio::fs::File::create(file_name)
+        .await
+        .context("Failed to create file for image dump")?;
+
+    let mut stream = client.download_from_container(
+        &container_name,
+        Some(DownloadFromContainerOptions { path: "/" }),
+    );
+    while let Some(res) = stream.next().await {
+        let bytes = res?;
+        file.write_all(&bytes).await?;
+    }
+
+    Ok(())
+}
 
 /// Clean up a container by removing it and waiting for it.
 pub async fn reap_container(name: &str) -> Result<()> {

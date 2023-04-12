@@ -10,13 +10,16 @@
 
 use anyhow::{Context as _, Result};
 use itertools::Itertools;
+use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use std::{
+    fmt::Display,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+use tar::Archive;
 
-use crate::docker::ImagePullPolicy;
+use crate::docker::{export_rootfs, ImagePullPolicy};
 
 pub trait IntoQemuArg {
     fn into_qemu_arg(&self) -> String;
@@ -78,20 +81,87 @@ pub struct Image {
 }
 
 impl Image {
-    async fn pull(&self) -> Result<()> {
+    async fn maybe_pull_kernel(&self) -> Result<()> {
         if let Some(ref kernel) = self.kernel {
-            kernel.image_policy.acquire_image(&kernel.image).await?;
+            kernel
+                .image_policy
+                .acquire_image(&kernel.image)
+                .await
+                .context("Failed to acquire kernel OCI image")?;
         }
-        self.rootfs
-            .image_policy
-            .acquire_image(&self.rootfs.image)
-            .await?;
         Ok(())
     }
 
-    async fn create_filesystem() -> PathBuf {
-        todo!()
+    async fn pull_rootfs(&self) -> Result<()> {
+        self.rootfs
+            .image_policy
+            .acquire_image(&self.rootfs.image)
+            .await
+            .context("Failed to acquire root filesystem OCI image")?;
+        Ok(())
     }
+
+    pub async fn create_and_populate_filesystem(&self, size: usize) -> Result<PathBuf> {
+        // Create root filesystem
+        let fs_path = create_filesystem(size, FileSystem::Ext4)
+            .await
+            .context("Failed to create root filesystem")?;
+
+        // Create a temporary directory and mount to it
+        let dir = tempfile::TempDir::new().context("Failed to create temporary directory")?;
+        let dir_path = dir.path();
+        let status = Command::new("mount")
+            .arg(format!("{}", fs_path.display()))
+            .arg(format!("{}", dir_path.display()))
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("failed to mount root filesystem")
+        }
+
+        defer! {
+            let _ = std::process::Command::new("umount")
+                .arg(format!("{}", dir_path.display()))
+                .status();
+        }
+
+        // Populate the root filesystem
+        let file = tempfile::NamedTempFile::new()?;
+        self.pull_rootfs().await?;
+        export_rootfs(&self.rootfs.image, file.path()).await?;
+
+        let mut archive = Archive::new(file);
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let _ = entry.unpack_in(dir_path);
+        }
+
+        Ok(fs_path)
+    }
+}
+
+/// Create an empty file to back a filesystem
+async fn create_empty_file(size: usize) -> Result<PathBuf> {
+    let file = tempfile::NamedTempFile::new_in(std::env::current_dir()?)?;
+    let path = file.into_temp_path().to_path_buf();
+    let file = tokio::fs::File::create(&path).await?;
+    file.set_len(size as u64).await?;
+    file.sync_all().await?;
+    Ok(path)
+}
+
+/// Create an empty ext4 filesystem
+async fn create_filesystem(size: usize, fs_type: FileSystem) -> Result<PathBuf> {
+    let path = create_empty_file(size).await?;
+    let status = tokio::process::Command::new("mkfs")
+        .arg("-t")
+        .arg(&fs_type.to_string())
+        .arg(&path.display().to_string())
+        .status()
+        .await?;
+    if !status.success() {
+        anyhow::bail!("Failed to run mkfs")
+    }
+    Ok(path)
 }
 
 /// Filesystems supported by Houdini.
@@ -99,6 +169,14 @@ impl Image {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum FileSystem {
     Ext4,
+}
+
+impl Display for FileSystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileSystem::Ext4 => write!(f, "ext4"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -167,4 +245,55 @@ pub struct PackageOption {
     pub pkg: String,
     /// Optional package version. Will default to latest.
     pub version: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn create_empty_file_test() {
+        let path = create_empty_file(13)
+            .await
+            .expect("file creation should succeed");
+
+        println!("{}", path.display());
+        assert_eq!(
+            tokio::fs::File::open(&path)
+                .await
+                .expect("file should open")
+                .metadata()
+                .await
+                .expect("should fetch metadata")
+                .len(),
+            13
+        );
+
+        tokio::fs::remove_file(&path)
+            .await
+            .expect("file deletion should succeed");
+    }
+
+    #[tokio::test]
+    async fn create_filesystem_test() {
+        let path = create_filesystem(4 * 1024_usize.pow(2), FileSystem::Ext4)
+            .await
+            .expect("file creation should succeed");
+        std::fs::remove_file(path).expect("file should be removed");
+    }
+
+    #[tokio::test]
+    async fn create_and_populate_filesystem_test() {
+        let image = Image {
+            kernel: None,
+            rootfs: ImageSpec {
+                image: "houndini-guest".into(),
+                image_policy: ImagePullPolicy::Never,
+            },
+        };
+        image
+            .create_and_populate_filesystem(40 * 1024_usize.pow(2))
+            .await
+            .expect("filesystem creation should succeed");
+    }
 }
